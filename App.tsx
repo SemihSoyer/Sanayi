@@ -4,21 +4,44 @@ import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import BusinessDashboardScreen from './screens/BusinessDashboardScreen'; // Yeni ekranı import et
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Session } from '@supabase/supabase-js';
-import { View } from 'react-native'; // Keep this for the root view if needed, or remove if NavigationContainer handles it all
+import { View, ActivityIndicator, StyleSheet } from 'react-native'; // ActivityIndicator ve StyleSheet eklendi
+
+// Kullanıcı profili için bir arayüz tanımlayalım
+interface UserProfile {
+  id: string;
+  username?: string;
+  website?: string;
+  avatar_url?: string;
+  role?: 'customer' | 'business_owner' | null;
+}
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-function AppTabs({ session }: { session: Session }) {
+// AppTabs şimdi userProfile bilgisini de alabilir (şimdilik sadece session kullanıyor)
+function AppTabs({ session, userProfile }: { session: Session; userProfile: UserProfile | null }) {
+  if (userProfile?.role === 'business_owner') {
+    return (
+      <Tab.Navigator>
+        <Tab.Screen name="İşletme Paneli" component={BusinessDashboardScreen} />
+        <Tab.Screen name="Profil">
+          {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
+        </Tab.Screen>
+      </Tab.Navigator>
+    );
+  }
+
+  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster
   return (
     <Tab.Navigator>
       <Tab.Screen name="Ana Sayfa" component={HomeScreen} />
       <Tab.Screen name="Profil">
-        {(props) => <ProfileScreen {...props} session={session} />}
+        {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
@@ -26,19 +49,29 @@ function AppTabs({ session }: { session: Session }) {
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(false); // Profil yüklemesi session yüklendikten sonra başlar
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setLoading(false);
+    const fetchInitialSession = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      setSession(currentSession);
+      setLoadingSession(false);
+      if (currentSession) {
+        fetchUserProfile(currentSession.user.id);
+      }
     };
 
-    getSession();
+    fetchInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession);
+      if (currentSession) {
+        fetchUserProfile(currentSession.user.id);
+      } else {
+        setUserProfile(null); // Session yoksa profili de temizle
+      }
     });
 
     return () => {
@@ -46,16 +79,44 @@ export default function App() {
     };
   }, []);
 
-  if (loading) {
-    return null; // Or a loading spinner
+  const fetchUserProfile = async (userId: string) => {
+    setLoadingProfile(true);
+    try {
+      const { data, error, status } = await supabase
+        .from('profiles')
+        .select(`id, username, website, avatar_url, role`)
+        .eq('id', userId)
+        .single();
+
+      if (error && status !== 406) {
+        throw error;
+      }
+
+      if (data) {
+        setUserProfile(data as UserProfile);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      // Alert.alert('Error', 'Could not fetch user profile.'); // Kullanıcıya hata gösterilebilir
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  if (loadingSession || (session && loadingProfile)) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
   }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {session && session.user ? (
+        {session && session.user && userProfile ? (
           <Stack.Screen name="App">
-            {(props) => <AppTabs {...props} session={session} />}
+            {(props) => <AppTabs {...props} session={session} userProfile={userProfile} />}
           </Stack.Screen>
         ) : (
           <Stack.Screen name="Auth" component={Auth} />
@@ -64,3 +125,11 @@ export default function App() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});

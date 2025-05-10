@@ -45,7 +45,7 @@ export default function Auth() {
     setLoading(false)
   }
 
-  async function signUpWithEmail() {
+  async function handleSignUp(role: 'customer' | 'business_owner') {
     setLoading(true)
     if (!email || !password) {
       Alert.alert('Error', 'Email and password cannot be empty.');
@@ -55,9 +55,15 @@ export default function Auth() {
     const { data, error } = await supabase.auth.signUp({
       email: email,
       password: password,
+      options: {
+        data: {
+          role: role,
+          // full_name: Eğer kayıt sırasında tam ad alıyorsanız buraya ekleyin
+        }
+      }
     })
 
-    setLoading(false); // Set loading to false immediately after the call
+    setLoading(false);
 
     if (error) {
       Alert.alert('Sign Up Error', error.message);
@@ -101,7 +107,19 @@ export default function Auth() {
         <Button title="Sign in" disabled={loading} onPress={() => signInWithEmail()} />
       </View>
       <View style={styles.verticallySpaced}>
-        <Button title="Sign up" disabled={loading} onPress={() => signUpWithEmail()} />
+        <Button 
+          title="Müşteri Olarak Kaydol" 
+          disabled={loading} 
+          onPress={() => handleSignUp('customer')} 
+        />
+      </View>
+      <View style={styles.verticallySpaced}>
+        <Button 
+          title="İşyeri Sahibi Olarak Kaydol" 
+          disabled={loading} 
+          onPress={() => handleSignUp('business_owner')} 
+          buttonStyle={{backgroundColor: 'green'}} // Farklı bir renk örneği
+        />
       </View>
     </View>
   )
