@@ -7,6 +7,8 @@ import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BusinessDashboardScreen from './screens/BusinessDashboardScreen';
 import MyBusinessScreen from './screens/MyBusinessScreen'; // İşyerim ekranını import et
+import BusinessDetailScreen from './screens/BusinessDetailScreen'; // Yeni eklendi
+import { GestureHandlerRootView } from 'react-native-gesture-handler'; // Yeni eklendi
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -18,6 +20,7 @@ export type RootStackParamList = {
   CustomerAuth: undefined;
   BusinessAuth: undefined;
   App: { session: Session; userProfile: UserProfile | null }; // App ekranına parametreler
+  BusinessDetail: { businessOwnerId: string }; // Yeni eklendi
 };
 
 // Kullanıcı profili için bir arayüz tanımlayalım
@@ -123,23 +126,32 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {session && session.user && userProfile ? (
-          <Stack.Screen 
-            name="App" 
-            component={AppTabs} 
-            initialParams={{ session: session, userProfile: userProfile }} 
-          />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {session && session.user && userProfile ? (
+          <>
+            <Stack.Screen 
+              name="App" 
+              component={AppTabs} 
+              initialParams={{ session: session, userProfile: userProfile }} 
+            />
+            <Stack.Screen 
+              name="BusinessDetail" 
+              component={BusinessDetailScreen} 
+              options={{ headerShown: true, title: 'İşletme Detayları' }} // Başlık eklendi
+            />
+          </>
         ) : (
           // Giriş yapılmamışsa Auth ekranlarını göster
           <>
             <Stack.Screen name="CustomerAuth" component={CustomerAuthScreen} />
             <Stack.Screen name="BusinessAuth" component={BusinessAuthScreen} />
           </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 

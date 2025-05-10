@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform } from 'react-native'; // SafeAreaView ve GestureHandlerRootView kaldırıldı
 import { Text, Input, Button, Icon, Card } from '@rneui/themed';
 import { supabase } from '../lib/supabase';
+// DraggableFlatList importları kaldırıldı
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -11,7 +12,8 @@ interface BusinessDetails {
   name: string;
   description: string;
   address: string;
-  photos: string[]; 
+  photos: string[];
+  is_published: boolean; // Yeni eklendi
 }
 
 const MyBusinessScreen = () => {
@@ -22,8 +24,10 @@ const MyBusinessScreen = () => {
   const [businessName, setBusinessName] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]); 
+  const [photos, setPhotos] = useState<string[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [isPublished, setIsPublished] = useState(false); // Yeni eklendi
+  const [publishing, setPublishing] = useState(false); // Yeni eklendi
 
   const [hasBusiness, setHasBusiness] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -39,9 +43,9 @@ const MyBusinessScreen = () => {
         // owner_id PK olduğu için, select'te id'ye gerek yok.
         const { data, error } = await supabase
           .from('businesses')
-          .select('name, description, address, photos') 
+          .select('name, description, address, photos, is_published') // is_published eklendi
           .eq('owner_id', currentOwnerId)
-          .maybeSingle(); 
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -50,15 +54,17 @@ const MyBusinessScreen = () => {
           setDescription(data.description || '');
           setAddress(data.address || '');
           setPhotos(Array.isArray(data.photos) ? data.photos : []);
+          setIsPublished(data.is_published || false); // is_published state'i ayarlandı
           setHasBusiness(true);
-          setIsEditing(false); 
+          setIsEditing(false);
         } else {
           setHasBusiness(false);
-          setIsEditing(false); 
+          setIsEditing(false);
           setBusinessName('');
           setDescription('');
           setAddress('');
           setPhotos([]);
+          setIsPublished(false); // İşyeri yoksa yayınlanmamış kabul et
         }
       } catch (error) {
         if (error instanceof Error) Alert.alert('Hata', 'İşyeri bilgileri çekilirken bir sorun oluştu: ' + error.message);
@@ -93,35 +99,81 @@ const MyBusinessScreen = () => {
         return;
       }
       const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: true, aspect: [4, 3], quality: 0.6,
+        mediaTypes: 'images', // Tekrar string 'images' olarak düzeltildi
+        allowsMultipleSelection: true, 
+        quality: 0.6,
+        // aspect ve allowsEditing genellikle tekil seçimde kullanılır, çoklu seçimde kaldıralım
       });
+
       if (pickerResult.canceled) return;
+
       if (pickerResult.assets && pickerResult.assets.length > 0) {
-        const asset = pickerResult.assets[0];
-        const uri = asset.uri;
         setUploadingPhoto(true);
-        const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
-        const originalFileName = asset.fileName || `photo_${Date.now()}`;
-        const fileName = `${Date.now()}_${originalFileName}.${fileExt}`;
-        // ownerId'yi dosya yolu için kullanıyoruz, bu doğru.
-        const filePath = `${ownerId}/${fileName}`; 
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        if (blob.size === 0) {
-          Alert.alert('Yükleme Hatası', 'Seçilen dosyadan geçerli veri okunamadı.');
-          setUploadingPhoto(false); return;
+        const uploadedUrls: string[] = [];
+        for (const asset of pickerResult.assets) {
+          try {
+            const uri = asset.uri;
+            const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+            const originalFileName = asset.fileName || `photo_${Date.now()}`;
+            // Her dosya için benzersiz bir isim oluşturmak önemli
+            const fileName = `${Date.now()}_${originalFileName}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+            const filePath = `${ownerId}/${fileName}`;
+            
+            // Blob oluşturma yerine FormData kullanacağız
+            const formData = new FormData();
+            formData.append('file', {
+              uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+              name: fileName,
+              type: asset.mimeType || `image/${fileExt}`, // Geçerli bir MIME türü olduğundan emin olun
+            } as any);
+
+            console.log(`[Upload Debug] File: ${originalFileName}, URI: ${uri}`);
+            console.log(`[Upload Debug] FormData created for file: ${fileName}, Type: ${asset.mimeType || `image/${fileExt}`}`);
+            
+            // Blob size kontrolü FormData ile doğrudan yapılamaz, ancak ImagePicker genellikle geçerli assetler döndürür.
+            // Sunucu tarafında 0 byte kontrolü veya yükleme sonrası kontrol daha anlamlı olabilir.
+
+            console.log(`[Upload Debug] Attempting to upload to Supabase with FormData. Path: ${filePath}`);
+            const { error: uploadError, data: uploadData } = await supabase.storage
+              .from('businesses-photos')
+              .upload(filePath, formData, { // blob yerine formData
+                upsert: true, // ProfileScreen'deki gibi true yapalım
+                // contentType FormData ile genellikle belirtilmez, Supabase client halleder.
+              });
+            
+            console.log(`[Upload Debug] Supabase upload response for ${originalFileName} - Error:`, JSON.stringify(uploadError));
+            console.log(`[Upload Debug] Supabase upload response for ${originalFileName} - Data:`, JSON.stringify(uploadData));
+
+            if (uploadError) {
+              console.error(`[Upload Debug] Supabase upload failed for ${originalFileName}:`, uploadError);
+              throw uploadError;
+            }
+            
+            const { data: publicURLData } = supabase.storage.from('businesses-photos').getPublicUrl(filePath);
+            console.log(`[Upload Debug] Supabase getPublicUrl for ${originalFileName} - URL Data:`, JSON.stringify(publicURLData));
+
+            if (!publicURLData?.publicUrl) {
+              console.error(`[Upload Debug] Failed to get public URL for ${originalFileName}. publicURLData:`, publicURLData);
+              throw new Error(`Fotoğraf için public URL alınamadı: ${originalFileName}.`);
+            }
+            
+            console.log(`[Upload Debug] Successfully got public URL for ${originalFileName}: ${publicURLData.publicUrl}`);
+            uploadedUrls.push(publicURLData.publicUrl);
+          } catch (loopError) {
+            console.error(`[Upload Debug] Error in upload loop for ${asset.fileName || 'Bilinmeyen dosya'}:`, loopError);
+            if (loopError instanceof Error) Alert.alert('Bir Fotoğraf Yüklenirken Hata Oluştu', `${asset.fileName || 'Bilinmeyen dosya'}: ${loopError.message}`);
+            else Alert.alert('Bir Fotoğraf Yüklenirken Hata Oluştu', `${asset.fileName || 'Bilinmeyen dosya'}: Bilinmeyen bir hata.`);
+            // Bir fotoğraf başarısız olursa diğerlerine devam etmeyi veya durmayı seçebilirsiniz.
+            // Şimdilik devam ediyoruz ama kullanıcıya bilgi veriyoruz.
+          }
         }
-        const { error: uploadError } = await supabase.storage
-          .from('businesses-photos')
-          .upload(filePath, blob, { contentType: asset.mimeType || blob.type || `image/${fileExt}`, upsert: false });
-        if (uploadError) throw uploadError;
-        const { data: publicURLData } = supabase.storage.from('businesses-photos').getPublicUrl(filePath);
-        if (!publicURLData?.publicUrl) throw new Error('Fotoğraf için public URL alınamadı.');
-        setPhotos(prevPhotos => [...prevPhotos, publicURLData.publicUrl]);
+        if (uploadedUrls.length > 0) {
+          setPhotos(prevPhotos => [...prevPhotos, ...uploadedUrls]);
+        }
       }
     } catch (error) {
-      if (error instanceof Error) Alert.alert('Fotoğraf Yükleme Hatası', error.message);
+      // Genel try-catch bloğu, picker'ın kendisinden veya beklenmedik bir durumdan kaynaklanan hatalar için.
+      if (error instanceof Error) Alert.alert('Fotoğraf Seçme/Yükleme Hatası', error.message);
       else Alert.alert('Fotoğraf Yükleme Hatası', 'Bilinmeyen bir hata oluştu.');
     } finally {
       setUploadingPhoto(false);
@@ -132,6 +184,13 @@ const MyBusinessScreen = () => {
     setPhotos(prevPhotos => prevPhotos.filter((_, index) => index !== indexToDelete));
   };
 
+  const movePhoto = (fromIndex: number, toIndex: number) => {
+    const newPhotos = [...photos];
+    const [movedPhoto] = newPhotos.splice(fromIndex, 1);
+    newPhotos.splice(toIndex, 0, movedPhoto);
+    setPhotos(newPhotos);
+  };
+
   const handleSaveBusinessDetails = async () => {
     if (!ownerId) { Alert.alert('Hata', 'Kullanıcı kimliği bulunamadı.'); return; }
     if (!businessName.trim()) { Alert.alert('Eksik Bilgi', 'İşyeri adı boş bırakılamaz.'); return; }
@@ -139,11 +198,12 @@ const MyBusinessScreen = () => {
     try {
       // upsertData'dan id çıkarıldı, owner_id PK olarak kullanılacak.
       const upsertData: BusinessDetails = { 
-        owner_id: ownerId, 
-        name: businessName, 
+        owner_id: ownerId,
+        name: businessName,
         description: description,
-        address: address, 
+        address: address,
         photos: photos,
+        is_published: isPublished, // is_published eklendi
       };
 
       console.log('Attempting to save business details. Upsert data:', JSON.stringify(upsertData, null, 2));
@@ -166,9 +226,10 @@ const MyBusinessScreen = () => {
         setDescription(savedData.description || '');
         setAddress(savedData.address || '');
         setPhotos(Array.isArray(savedData.photos) ? savedData.photos : []);
+        setIsPublished(savedData.is_published || false); // is_published state'i güncellendi
         setHasBusiness(true);
       }
-      setIsEditing(false); 
+      setIsEditing(false);
     } catch (error) {
       if (error instanceof Error) Alert.alert('Kaydetme Hatası', error.message);
       else Alert.alert('Kaydetme Hatası', 'Bilinmeyen bir hata oluştu.');
@@ -177,28 +238,85 @@ const MyBusinessScreen = () => {
     }
   };
 
+  const handleTogglePublish = async () => {
+    if (!ownerId || !hasBusiness) {
+      Alert.alert('Hata', 'İşyeri bulunamadı veya kullanıcı kimliği eksik.');
+      return;
+    }
+    setPublishing(true);
+    try {
+      const newPublishStatus = !isPublished;
+      const { error } = await supabase
+        .from('businesses')
+        .update({ is_published: newPublishStatus })
+        .eq('owner_id', ownerId);
+
+      if (error) throw error;
+
+      setIsPublished(newPublishStatus);
+      Alert.alert('Başarılı', `İşyeri ${newPublishStatus ? 'yayınlandı' : 'yayından kaldırıldı'}.`);
+    } catch (error) {
+      if (error instanceof Error) Alert.alert('Yayınlama Hatası', error.message);
+      else Alert.alert('Yayınlama Hatası', 'Bilinmeyen bir hata oluştu.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const renderEditForm = () => (
     <View>
-      <Input label="İşyeri Adı" placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto} />
-      <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto} />
-      <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto} />
+      <Input label="İşyeri Adı" placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       <Text style={styles.sectionTitle}>İşyeri Fotoğrafları</Text>
-      <ScrollView horizontal style={styles.photosScrollView} showsHorizontalScrollIndicator={false}>
-        {photos.map((url, index) => (
-          <View key={index} style={styles.photoContainer}>
-            <Image source={{ uri: url }} style={styles.photo} />
-            <TouchableOpacity style={styles.deletePhotoButton} onPress={() => handleDeletePhoto(index)} disabled={saving || uploadingPhoto}>
-              <Icon name="close-circle" type="ionicon" color="#fff" size={24} />
-            </TouchableOpacity>
-          </View>
-        ))}
-        <TouchableOpacity style={styles.addPhotoCard} onPress={handlePickAndUploadImage} disabled={saving || uploadingPhoto}>
-          {uploadingPhoto ? (<ActivityIndicator color="#007bff" />) : (<Icon name="add-a-photo" type="material" color="#007bff" size={36} />)}
-          <Text style={styles.addPhotoText}>Fotoğraf Ekle</Text>
-        </TouchableOpacity>
-      </ScrollView>
-      <Button title={saving || uploadingPhoto ? 'Kaydediliyor...' : 'Bilgileri Kaydet'} onPress={handleSaveBusinessDetails} disabled={saving || loading || uploadingPhoto} buttonStyle={styles.saveButton} containerStyle={styles.buttonContainer} />
-      {hasBusiness && (<Button title="Vazgeç" onPress={() => { setIsEditing(false); fetchOwnerIdAndInitialData(); }} type="outline" buttonStyle={styles.cancelButton} containerStyle={styles.buttonContainer} />)}
+      
+      <View style={styles.photosEditorContainer}>
+        <ScrollView horizontal style={styles.photosScrollView} showsHorizontalScrollIndicator={false}>
+          {photos.map((url, index) => (
+            <View key={url} style={styles.photoItemContainer}>
+              <Image source={{ uri: url }} style={styles.photo} />
+              <TouchableOpacity 
+                style={styles.deletePhotoButton} 
+                onPress={() => handleDeletePhoto(index)} 
+                disabled={saving || uploadingPhoto || publishing}
+              >
+                <Icon name="close-circle" type="ionicon" color="#fff" size={24} />
+              </TouchableOpacity>
+              <View style={styles.moveButtonsContainer}>
+                {index > 0 && (
+                  <TouchableOpacity 
+                    style={styles.moveButton} 
+                    onPress={() => movePhoto(index, index - 1)}
+                    disabled={saving || uploadingPhoto || publishing}
+                  >
+                    <Icon name="arrow-up-circle" type="ionicon" color="#fff" size={22} />
+                  </TouchableOpacity>
+                )}
+                {index < photos.length - 1 && (
+                  <TouchableOpacity 
+                    style={styles.moveButton} 
+                    onPress={() => movePhoto(index, index + 1)}
+                    disabled={saving || uploadingPhoto || publishing}
+                  >
+                    <Icon name="arrow-down-circle" type="ionicon" color="#fff" size={22} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ))}
+          <TouchableOpacity 
+            style={styles.addPhotoCard} 
+            onPress={handlePickAndUploadImage} 
+            disabled={saving || uploadingPhoto || publishing}
+          >
+            {uploadingPhoto ? (<ActivityIndicator color="#007bff" />) : (<Icon name="add-a-photo" type="material" color="#007bff" size={36} />)}
+            <Text style={styles.addPhotoText}>Fotoğraf Ekle</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      <Button title={saving || uploadingPhoto ? 'Kaydediliyor...' : 'Bilgileri Kaydet'} onPress={handleSaveBusinessDetails} disabled={saving || loading || uploadingPhoto || publishing} buttonStyle={styles.saveButton} containerStyle={styles.buttonContainer} />
+      {hasBusiness && (<Button title="Vazgeç" onPress={() => { setIsEditing(false); fetchOwnerIdAndInitialData(); }} type="outline" buttonStyle={styles.cancelButton} containerStyle={styles.buttonContainer} disabled={publishing} />)}
     </View>
   );
 
@@ -206,6 +324,10 @@ const MyBusinessScreen = () => {
     <Card containerStyle={styles.card}>
       <Card.Title style={styles.cardTitle}>{businessName || "İşyeri Adı Belirtilmemiş"}</Card.Title>
       <Card.Divider />
+      <Text style={styles.previewLabel}>Durum:</Text>
+      <Text style={[styles.previewText, { color: isPublished ? 'green' : 'red', fontWeight: 'bold' }]}>
+        {isPublished ? 'Yayında' : 'Yayında Değil'}
+      </Text>
       <Text style={styles.previewLabel}>Açıklama:</Text>
       <Text style={styles.previewText}>{description || "Açıklama yok."}</Text>
       <Text style={styles.previewLabel}>Adres:</Text>
@@ -216,7 +338,23 @@ const MyBusinessScreen = () => {
           {photos.map((url, index) => (<Image key={index} source={{ uri: url }} style={styles.previewPhoto} />))}
         </ScrollView>
       ) : (<Text style={styles.previewText}>Henüz fotoğraf eklenmemiş.</Text>)}
-      <Button title="İşyeri Bilgilerini Düzenle" onPress={() => setIsEditing(true)} icon={{ name: 'edit', type: 'material', color: 'white' }} buttonStyle={styles.editButton} containerStyle={styles.buttonContainer} />
+      
+      <Button 
+        title={publishing ? 'İşleniyor...' : (isPublished ? 'Yayından Kaldır' : 'Yayınla')} 
+        onPress={handleTogglePublish} 
+        disabled={publishing || loading}
+        buttonStyle={[styles.publishButton, { backgroundColor: isPublished ? '#dc3545' : '#28a745' }]} 
+        containerStyle={styles.buttonContainer} 
+        icon={{ name: isPublished ? 'eye-off-outline' : 'eye-outline', type: 'ionicon', color: 'white' }}
+      />
+      <Button 
+        title="İşyeri Bilgilerini Düzenle" 
+        onPress={() => setIsEditing(true)} 
+        icon={{ name: 'edit', type: 'material', color: 'white' }} 
+        buttonStyle={styles.editButton} 
+        containerStyle={styles.buttonContainer} 
+        disabled={publishing || loading}
+      />
     </Card>
   );
 
@@ -247,14 +385,63 @@ const styles = StyleSheet.create({
   header: { textAlign: 'center', marginBottom: 25, color: '#333', fontWeight: 'bold' },
   inputContainer: { backgroundColor: '#fff', borderRadius: 8, borderWidth:1, borderColor: '#ddd', paddingHorizontal:10, marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#333', marginTop: 15, marginBottom: 10 },
-  photosScrollView: { marginBottom: 20, maxHeight: 130 },
-  photoContainer: { marginRight: 10, position: 'relative' },
-  photo: { width: 100, height: 100, borderRadius: 8, backgroundColor: '#e9ecef' },
-  deletePhotoButton: { position: 'absolute', top: -5, right: -5, backgroundColor: 'rgba(220,53,69,0.9)', borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center' },
-  addPhotoCard: { width: 100, height: 100, borderRadius: 8, backgroundColor: '#f8f9fa', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#007bff', borderStyle: 'dashed', padding:10 },
+  photosEditorContainer: { // Fotoğraf listesi ve ekleme butonu için genel sarmalayıcı
+    marginBottom: 20,
+  },
+  photosScrollView: { 
+    // maxHeight: 130, // Eğer dikey scroll olacaksa veya içerik taşacaksa
+  },
+  photoItemContainer: { // Her bir fotoğraf ve butonları için container
+    marginRight: 10, 
+    position: 'relative',
+    width: 100, 
+    height: 100, 
+  },
+  photo: { width: '100%', height: '100%', borderRadius: 8, backgroundColor: '#e9ecef' },
+  deletePhotoButton: { 
+    position: 'absolute', 
+    top: -8, // Butonun biraz dışarı taşması için
+    right: -8, // Butonun biraz dışarı taşması için
+    backgroundColor: 'rgba(220,53,69,0.85)', 
+    borderRadius: 15, 
+    width: 30, 
+    height: 30, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    zIndex: 1 
+  },
+  moveButtonsContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingVertical: 2,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+  },
+  moveButton: {
+    paddingHorizontal: 5,
+  },
+  addPhotoCard: { 
+    width: 100, 
+    height: 100, 
+    borderRadius: 8, 
+    backgroundColor: '#f8f9fa', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 2, 
+    borderColor: '#007bff', 
+    borderStyle: 'dashed', 
+    padding:10,
+    marginLeft: 10, // Önceki fotoğraflardan sonra boşluk
+  },
   addPhotoText: { marginTop: 5, fontSize: 12, color: '#007bff', textAlign: 'center' },
   buttonContainer: { marginTop: 10, marginBottom:10 },
   saveButton: { backgroundColor: '#28a745', borderRadius: 8, paddingVertical: 12 },
+  publishButton: { borderRadius: 8, paddingVertical: 12 }, // Yeni stil
   cancelButton: { borderColor: '#6c757d', borderRadius: 8, paddingVertical: 10, borderWidth:1 },
   editButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12 },
   addButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12, minWidth: 200 },
