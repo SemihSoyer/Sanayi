@@ -4,7 +4,8 @@ import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
-import BusinessDashboardScreen from './screens/BusinessDashboardScreen'; // Yeni ekranı import et
+import BusinessDashboardScreen from './screens/BusinessDashboardScreen';
+import MyBusinessScreen from './screens/MyBusinessScreen'; // İşyerim ekranını import et
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -29,6 +30,7 @@ function AppTabs({ session, userProfile }: { session: Session; userProfile: User
     return (
       <Tab.Navigator>
         <Tab.Screen name="İşletme Paneli" component={BusinessDashboardScreen} />
+        <Tab.Screen name="İşyerim" component={MyBusinessScreen} />
         <Tab.Screen name="Profil">
           {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
         </Tab.Screen>
@@ -36,7 +38,7 @@ function AppTabs({ session, userProfile }: { session: Session; userProfile: User
     );
   }
 
-  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster
+  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster (değişiklik yok)
   return (
     <Tab.Navigator>
       <Tab.Screen name="Ana Sayfa" component={HomeScreen} />
