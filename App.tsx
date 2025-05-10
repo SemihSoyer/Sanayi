@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import 'react-native-url-polyfill/auto';
 import { supabase } from './lib/supabase';
-import Auth from './components/Auth';
+import CustomerAuthScreen from './components/Auth'; // Auth -> CustomerAuthScreen olarak yeniden adlandırıldı (import'ta)
+import BusinessAuthScreen from './components/BusinessAuthScreen'; // Yeni BusinessAuthScreen import edildi
 import HomeScreen from './screens/HomeScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import BusinessDashboardScreen from './screens/BusinessDashboardScreen';
@@ -11,6 +12,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Session } from '@supabase/supabase-js';
 import { View, ActivityIndicator, StyleSheet } from 'react-native'; // ActivityIndicator ve StyleSheet eklendi
+
+// Stack Navigator için Param Listesi (Auth ekranları ve Ana Uygulama)
+export type RootStackParamList = {
+  CustomerAuth: undefined;
+  BusinessAuth: undefined;
+  App: { session: Session; userProfile: UserProfile | null }; // App ekranına parametreler
+};
 
 // Kullanıcı profili için bir arayüz tanımlayalım
 interface UserProfile {
@@ -22,10 +30,11 @@ interface UserProfile {
 }
 
 const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+const Stack = createStackNavigator<RootStackParamList>(); // Stack navigator'ı tiple
 
-// AppTabs şimdi userProfile bilgisini de alabilir (şimdilik sadece session kullanıyor)
-function AppTabs({ session, userProfile }: { session: Session; userProfile: UserProfile | null }) {
+// AppTabs şimdi userProfile bilgisini de alabilir
+function AppTabs({ route }: { route: { params: { session: Session; userProfile: UserProfile | null } } }) {
+  const { session, userProfile } = route.params;
   if (userProfile?.role === 'business_owner') {
     return (
       <Tab.Navigator>
@@ -108,7 +117,7 @@ export default function App() {
   if (loadingSession || (session && loadingProfile)) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#007bff" />
       </View>
     );
   }
@@ -117,11 +126,17 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session && session.user && userProfile ? (
-          <Stack.Screen name="App">
-            {(props) => <AppTabs {...props} session={session} userProfile={userProfile} />}
-          </Stack.Screen>
+          <Stack.Screen 
+            name="App" 
+            component={AppTabs} 
+            initialParams={{ session: session, userProfile: userProfile }} 
+          />
         ) : (
-          <Stack.Screen name="Auth" component={Auth} />
+          // Giriş yapılmamışsa Auth ekranlarını göster
+          <>
+            <Stack.Screen name="CustomerAuth" component={CustomerAuthScreen} />
+            <Stack.Screen name="BusinessAuth" component={BusinessAuthScreen} />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>
@@ -133,5 +148,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f0f4f7', // Auth ekranlarıyla uyumlu arka plan
   },
 });
