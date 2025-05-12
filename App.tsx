@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase';
 import CustomerAuthScreen from './components/Auth'; // Auth -> CustomerAuthScreen olarak yeniden adlandırıldı (import'ta)
 import BusinessAuthScreen from './components/BusinessAuthScreen'; // Yeni BusinessAuthScreen import edildi
 import HomeScreen from './screens/HomeScreen';
+import MapScreen from './screens/MapScreen'; // MapScreen import edildi
 import ProfileScreen from './screens/ProfileScreen';
 import BusinessDashboardScreen from './screens/BusinessDashboardScreen';
 import MyBusinessScreen from './screens/MyBusinessScreen'; // İşyerim ekranını import et
@@ -11,6 +12,7 @@ import BusinessDetailScreen from './screens/BusinessDetailScreen'; // Yeni eklen
 import { GestureHandlerRootView } from 'react-native-gesture-handler'; // Yeni eklendi
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Icon } from '@rneui/themed'; // Icon import edildi
 import { createStackNavigator } from '@react-navigation/stack';
 import { Session } from '@supabase/supabase-js';
 import { View, ActivityIndicator, StyleSheet } from 'react-native'; // ActivityIndicator ve StyleSheet eklendi
@@ -50,11 +52,35 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
     );
   }
 
-  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster (değişiklik yok)
+  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster
   return (
-    <Tab.Navigator>
-      <Tab.Screen name="Ana Sayfa" component={HomeScreen} />
-      <Tab.Screen name="Profil">
+    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#007bff' }}>
+      <Tab.Screen 
+        name="Ana Sayfa" 
+        component={HomeScreen} 
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="home" type="material-community" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Harita" // Yeni Harita sekmesi
+        component={MapScreen} 
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="map-marker" type="material-community" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Profil" 
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="account" type="material-community" color={color} size={size} />
+          ),
+        }}
+      >
         {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
       </Tab.Screen>
     </Tab.Navigator>

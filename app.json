@@ -14,14 +14,20 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.semihsoyer.expo-user-management"
+      "config": {
+        "googleMapsApiKey": "AIzaSyAtKbT60EmOmge4oIx_518JNLMOIIHktk0"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAtKbT60EmOmge4oIx_518JNLMOIIHktk0"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

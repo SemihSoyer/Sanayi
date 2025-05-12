@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform } from 'react-native'; // SafeAreaView ve GestureHandlerRootView kaldırıldı
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform, Dimensions, Modal } from 'react-native'; // Modal ve useRef eklendi
 import { Text, Input, Button, Icon, Card } from '@rneui/themed';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps'; // PROVIDER_DEFAULT eklendi
 import { supabase } from '../lib/supabase';
-// DraggableFlatList importları kaldırıldı
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -13,7 +13,9 @@ interface BusinessDetails {
   description: string;
   address: string;
   photos: string[];
-  is_published: boolean; // Yeni eklendi
+  is_published: boolean;
+  latitude: number | null; // Yeni eklendi
+  longitude: number | null; // Yeni eklendi
 }
 
 const MyBusinessScreen = () => {
@@ -24,13 +26,19 @@ const MyBusinessScreen = () => {
   const [businessName, setBusinessName] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
-  const [isPublished, setIsPublished] = useState(false); // Yeni eklendi
-  const [publishing, setPublishing] = useState(false); // Yeni eklendi
+  const [isPublished, setIsPublished] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const [hasBusiness, setHasBusiness] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [fullScreenMapVisible, setFullScreenMapVisible] = useState(false); // Tam ekran harita modal durumu
+  
+  const mapRef = useRef<MapView>(null); // Küçük harita için ref
+  const fullScreenMapRef = useRef<MapView>(null); // Tam ekran harita için ref
 
   const fetchOwnerIdAndInitialData = useCallback(async () => {
     setLoading(true);
@@ -43,7 +51,7 @@ const MyBusinessScreen = () => {
         // owner_id PK olduğu için, select'te id'ye gerek yok.
         const { data, error } = await supabase
           .from('businesses')
-          .select('name, description, address, photos, is_published') // is_published eklendi
+          .select('name, description, address, latitude, longitude, photos, is_published') // latitude, longitude eklendi
           .eq('owner_id', currentOwnerId)
           .maybeSingle();
 
@@ -53,8 +61,10 @@ const MyBusinessScreen = () => {
           setBusinessName(data.name || '');
           setDescription(data.description || '');
           setAddress(data.address || '');
+          setLatitude(data.latitude); // latitude state'i ayarlandı
+          setLongitude(data.longitude); // longitude state'i ayarlandı
           setPhotos(Array.isArray(data.photos) ? data.photos : []);
-          setIsPublished(data.is_published || false); // is_published state'i ayarlandı
+          setIsPublished(data.is_published || false);
           setHasBusiness(true);
           setIsEditing(false);
         } else {
@@ -63,8 +73,10 @@ const MyBusinessScreen = () => {
           setBusinessName('');
           setDescription('');
           setAddress('');
+          setLatitude(null); // İşyeri yoksa null yap
+          setLongitude(null); // İşyeri yoksa null yap
           setPhotos([]);
-          setIsPublished(false); // İşyeri yoksa yayınlanmamış kabul et
+          setIsPublished(false);
         }
       } catch (error) {
         if (error instanceof Error) Alert.alert('Hata', 'İşyeri bilgileri çekilirken bir sorun oluştu: ' + error.message);
@@ -202,8 +214,10 @@ const MyBusinessScreen = () => {
         name: businessName,
         description: description,
         address: address,
+        latitude: latitude, // latitude eklendi
+        longitude: longitude, // longitude eklendi
         photos: photos,
-        is_published: isPublished, // is_published eklendi
+        is_published: isPublished,
       };
 
       console.log('Attempting to save business details. Upsert data:', JSON.stringify(upsertData, null, 2));
@@ -225,8 +239,10 @@ const MyBusinessScreen = () => {
         setBusinessName(savedData.name || '');
         setDescription(savedData.description || '');
         setAddress(savedData.address || '');
+        setLatitude(savedData.latitude); // latitude güncellendi
+        setLongitude(savedData.longitude); // longitude güncellendi
         setPhotos(Array.isArray(savedData.photos) ? savedData.photos : []);
-        setIsPublished(savedData.is_published || false); // is_published state'i güncellendi
+        setIsPublished(savedData.is_published || false);
         setHasBusiness(true);
       }
       setIsEditing(false);
@@ -263,13 +279,136 @@ const MyBusinessScreen = () => {
     }
   };
 
+  // Tam ekran harita için zoom fonksiyonları
+  const zoomIn = async () => {
+    const camera = await fullScreenMapRef.current?.getCamera();
+    if (camera?.zoom !== undefined) {
+      const newZoom = camera.zoom + 1;
+      // Sadece zoom seviyesini animateCamera'ya geçirelim
+      fullScreenMapRef.current?.animateCamera({ zoom: newZoom }, { duration: 300 });
+    } else {
+      console.warn("Zoom yapmak için mevcut kamera zoom seviyesi alınamadı.");
+    }
+  };
+
+  const zoomOut = async () => {
+    const camera = await fullScreenMapRef.current?.getCamera();
+    if (camera?.zoom !== undefined && camera.zoom > 0) {
+      const newZoom = camera.zoom - 1;
+      // Sadece zoom seviyesini animateCamera'ya geçirelim
+      fullScreenMapRef.current?.animateCamera({ zoom: newZoom }, { duration: 300 });
+    } else if (camera?.zoom === 0) {
+      console.log("Minimum zoom seviyesine ulaşıldı.");
+    } else {
+      console.warn("Uzaklaştırmak için mevcut kamera zoom seviyesi alınamadı.");
+    }
+  };
+
+  // Harita üzerindeki marker'ın konumunu güncelleme
+  const handleMapInteraction = (e: any) => {
+    const { latitude: newLat, longitude: newLng } = e.nativeEvent.coordinate;
+    setLatitude(newLat);
+    setLongitude(newLng);
+  }
+
   const renderEditForm = () => (
     <View>
       <Input label="İşyeri Adı" placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
-      <Text style={styles.sectionTitle}>İşyeri Fotoğrafları</Text>
       
+      <Text style={styles.sectionTitle}>Konum Seçimi</Text>
+      <TouchableOpacity onPress={() => setFullScreenMapVisible(true)} activeOpacity={0.8}>
+        <View style={styles.mapContainer}>
+          <MapView
+            ref={mapRef}
+            style={styles.map}
+            provider={PROVIDER_DEFAULT}
+            scrollEnabled={false} // Küçük haritada kaydırmayı devre dışı bırak
+            zoomEnabled={false} // Küçük haritada zoomu devre dışı bırak
+            pitchEnabled={false}
+            rotateEnabled={false}
+            initialRegion={{
+              latitude: latitude || 41.0082, // Başlangıç konumu (varsayılan: İstanbul)
+              longitude: longitude || 28.9784,
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            }}
+            region={latitude && longitude ? { // Eğer koordinat varsa haritayı oraya odakla
+              latitude: latitude,
+              longitude: longitude,
+              latitudeDelta: 0.01, // Daha yakın zoom
+              longitudeDelta: 0.01,
+            } : undefined}
+            // onPress={handleMapInteraction} // Küçük haritaya tıklayınca modal açılacak
+          >
+            {latitude && longitude && (
+              <Marker
+                coordinate={{ latitude, longitude }}
+                // draggable={false} // Sürükleme tam ekranda olacak
+              />
+            )}
+          </MapView>
+          <View style={styles.mapOverlay}>
+            <Icon name="search-outline" type="ionicon" color="#fff" size={20}/>
+            <Text style={styles.mapOverlayText}>Konumu Görüntüle/Düzenle</Text>
+          </View>
+          <Text style={styles.mapHelperText}>Konumu ayarlamak için haritaya dokunun.</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Tam Ekran Harita Modalı */}
+      <Modal
+        visible={fullScreenMapVisible}
+        animationType="slide"
+        onRequestClose={() => setFullScreenMapVisible(false)}
+      >
+        <View style={styles.fullscreenMapContainer}>
+          <MapView
+            ref={fullScreenMapRef} // Tam ekran harita için ayrı ref
+            style={styles.fullscreenMap}
+            provider={PROVIDER_DEFAULT}
+            initialRegion={{
+              latitude: latitude || 41.0082,
+              longitude: longitude || 28.9784,
+              latitudeDelta: latitude ? 0.01 : 0.0922, // Konum varsa yakın zoom, yoksa genel
+              longitudeDelta: longitude ? 0.01 : 0.0421,
+            }}
+            showsUserLocation // Kullanıcının yerini göster (isteğe bağlı)
+            onPress={handleMapInteraction} // Haritaya basınca konumu güncelle
+          >
+            {latitude && longitude && (
+              <Marker
+                coordinate={{ latitude, longitude }}
+                title="İşletme Konumu"
+                description="Konumu ayarlamak için haritaya dokunun veya sürükleyin"
+                draggable // Sürüklenebilir marker
+                onDragEnd={handleMapInteraction} // Sürükleme bitince konumu güncelle
+              />
+            )}
+          </MapView>
+          
+          {/* Zoom Kontrolleri */}
+          <View style={styles.zoomControls}>
+            <TouchableOpacity style={styles.zoomButton} onPress={zoomIn}>
+              <Icon name="add" type="material" color="#333" size={24} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.zoomButton, { borderBottomWidth: 0 }]} onPress={zoomOut}>
+              <Icon name="remove" type="material" color="#333" size={24} />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Kapatma Butonu */}
+          <TouchableOpacity 
+            style={styles.closeButton} 
+            onPress={() => setFullScreenMapVisible(false)}
+          >
+            <Icon name="close" type="material" color="#333" size={28} />
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <Text style={styles.sectionTitle}>İşyeri Fotoğrafları</Text>
       <View style={styles.photosEditorContainer}>
         <ScrollView horizontal style={styles.photosScrollView} showsHorizontalScrollIndicator={false}>
           {photos.map((url, index) => (
@@ -332,6 +471,8 @@ const MyBusinessScreen = () => {
       <Text style={styles.previewText}>{description || "Açıklama yok."}</Text>
       <Text style={styles.previewLabel}>Adres:</Text>
       <Text style={styles.previewText}>{address || "Adres belirtilmemiş."}</Text>
+      <Text style={styles.previewLabel}>Konum:</Text>
+      <Text style={styles.previewText}>{latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Konum belirtilmemiş."}</Text>
       <Text style={styles.previewLabel}>Fotoğraflar:</Text>
       {photos.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScrollViewPreview}>
@@ -384,14 +525,96 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f2f5' },
   header: { textAlign: 'center', marginBottom: 25, color: '#333', fontWeight: 'bold' },
   inputContainer: { backgroundColor: '#fff', borderRadius: 8, borderWidth:1, borderColor: '#ddd', paddingHorizontal:10, marginBottom: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#333', marginTop: 15, marginBottom: 10 },
-  photosEditorContainer: { // Fotoğraf listesi ve ekleme butonu için genel sarmalayıcı
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#333', marginTop: 20, marginBottom: 10 }, 
+  mapContainer: {
+    height: 180, // Küçük haritanın yüksekliği ayarlandı
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    overflow: 'hidden', 
+    position: 'relative', // Overlay için
+    backgroundColor: '#e9ecef', // Harita yüklenirken arka plan
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapOverlay: { // Küçük harita üzerine tıklama alanı
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8, // Kenarlarla uyumlu
+    flexDirection: 'row', // İkon ve metin yan yana
+    padding: 10,
+  },
+  mapOverlayText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  mapHelperText: {
+    position: 'absolute',
+    bottom: 5,
+    left: 5,
+    right: 5,
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#fff',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 3,
+    borderRadius: 4,
+    zIndex: 1, // Overlay'in üzerinde olması için
+  },
+  fullscreenMapContainer: { // Modal içeriği
+    flex: 1,
+    position: 'relative', // Butonlar için
+  },
+  fullscreenMap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  zoomControls: { // Zoom butonlarının container'ı
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 20, // iOS için alttan boşluk
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    // Gölge efektleri (isteğe bağlı)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  zoomButton: { // Zoom butonları (+/-)
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 1, // Butonlar arası çizgi
+    borderBottomColor: '#eee',
+  },
+  closeButton: { // Kapatma butonu (X)
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20, // iOS için yukarıdan boşluk
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 10,
+    borderRadius: 20, // Yuvarlak buton
+    // Gölge
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  photosEditorContainer: { 
     marginBottom: 20,
   },
   photosScrollView: { 
-    // maxHeight: 130, // Eğer dikey scroll olacaksa veya içerik taşacaksa
   },
-  photoItemContainer: { // Her bir fotoğraf ve butonları için container
+  photoItemContainer: { 
     marginRight: 10, 
     position: 'relative',
     width: 100, 
@@ -400,8 +623,8 @@ const styles = StyleSheet.create({
   photo: { width: '100%', height: '100%', borderRadius: 8, backgroundColor: '#e9ecef' },
   deletePhotoButton: { 
     position: 'absolute', 
-    top: -8, // Butonun biraz dışarı taşması için
-    right: -8, // Butonun biraz dışarı taşması için
+    top: -8, 
+    right: -8, 
     backgroundColor: 'rgba(220,53,69,0.85)', 
     borderRadius: 15, 
     width: 30, 
@@ -436,12 +659,12 @@ const styles = StyleSheet.create({
     borderColor: '#007bff', 
     borderStyle: 'dashed', 
     padding:10,
-    marginLeft: 10, // Önceki fotoğraflardan sonra boşluk
+    marginLeft: 10, 
   },
   addPhotoText: { marginTop: 5, fontSize: 12, color: '#007bff', textAlign: 'center' },
   buttonContainer: { marginTop: 10, marginBottom:10 },
   saveButton: { backgroundColor: '#28a745', borderRadius: 8, paddingVertical: 12 },
-  publishButton: { borderRadius: 8, paddingVertical: 12 }, // Yeni stil
+  publishButton: { borderRadius: 8, paddingVertical: 12 }, 
   cancelButton: { borderColor: '#6c757d', borderRadius: 8, paddingVertical: 10, borderWidth:1 },
   editButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12 },
   addButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12, minWidth: 200 },
