@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 25,
-    backgroundColor: '#f0f4f7', // Açık bir arka plan rengi
+    backgroundColor: '#f0f2f5', // App.tsx ile uyumlu açık gri
   },
   header: {
     fontSize: 28,
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   signInButton: {
-    backgroundColor: '#007bff', // Mavi renk
+    backgroundColor: '#0066CC', // Yeni birincil mavi
   },
   signUpButton: {
     backgroundColor: '#28a745', // Yeşil renk
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchAuthText: {
-    color: '#007bff',
+    color: '#0066CC', // Yeni birincil mavi
     fontSize: 15,
     fontWeight: '600',
   }

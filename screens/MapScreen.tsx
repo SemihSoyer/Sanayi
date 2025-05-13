@@ -90,7 +90,7 @@ const MapScreen = () => {
   if (loadingLocation) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#0066CC" />
         <Text>Konumunuz alınıyor...</Text>
       </View>
     );
@@ -103,7 +103,7 @@ const MapScreen = () => {
         <Text style={styles.errorText}>{errorMsg}</Text>
         {/* İzin reddedildiyse tekrar deneme butonu göstermeyebiliriz veya farklı bir mesaj verebiliriz */}
         {errorMsg !== 'Konum izni reddedildi. Harita özelliği kullanılamıyor.' && (
-           <Button title="Tekrar Dene" onPress={getLocationAndBusinesses} />
+           <Button title="Tekrar Dene" onPress={getLocationAndBusinesses} color="#0066CC" />
         )}
       </View>
     );
@@ -130,6 +130,7 @@ const MapScreen = () => {
         }}
         showsUserLocation={true} // Kullanıcının mevcut konumunu mavi nokta ile göster
         followsUserLocation={true} // Harita kullanıcıyı takip etsin (isteğe bağlı)
+        key={businesses.length > 0 ? 'map-with-businesses' : 'map-empty'} // İşletmeler yüklendiğinde haritayı yeniden render et
       >
         {businesses.map((business) => (
           <Marker

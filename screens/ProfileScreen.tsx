@@ -176,7 +176,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
   if (loading && !avatarUrl && !username) { // Daha kapsamlı ilk yükleme kontrolü
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff"/>
+        <ActivityIndicator size="large" color="#0066CC"/>
       </View>
     );
   }
@@ -193,7 +193,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
         >
           <Avatar.Accessory size={34} onPress={handlePickAndUploadAvatar} disabled={uploading || loading} />
         </Avatar>
-        {(uploading || (loading && avatarUrl === null)) && <ActivityIndicator style={styles.uploadIndicator} size="small" color="#007bff"/>}
+        {(uploading || (loading && avatarUrl === null)) && <ActivityIndicator style={styles.uploadIndicator} size="small" color="#0066CC"/>}
       </View>
       
       <Text style={styles.emailText}>{session?.user?.email}</Text>
@@ -241,13 +241,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#f0f2f5', // Diğer ekranlarla uyumlu açık gri
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#f0f2f5', // Diğer ekranlarla uyumlu açık gri
   },
   avatarContainer: {
     alignItems: 'center',
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
   avatar: {
     backgroundColor: '#cccccc',
     borderWidth: 3,
-    borderColor: '#007bff',
+    borderColor: '#0066CC', // Yeni birincil mavi
   },
   uploadIndicator: {
     position: 'absolute',
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     shadowRadius: 1.41,
   },
   label: {
-    color: '#007bff',
+    color: '#0066CC', // Yeni birincil mavi
     fontWeight: '600',
     marginBottom: 5,
     marginLeft: 5,
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   button: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#0066CC', // Yeni birincil mavi
     borderRadius: 10,
     paddingVertical: 12,
   },

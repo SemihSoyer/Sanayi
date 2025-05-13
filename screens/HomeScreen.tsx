@@ -91,7 +91,7 @@ const HomeScreen = () => {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#0066CC" />
         <Text>İşletmeler yükleniyor...</Text>
       </View>
     );
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     marginTop: 20,
-    backgroundColor: '#007bff',
+    backgroundColor: '#0066CC', // Yeni birincil mavi
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,

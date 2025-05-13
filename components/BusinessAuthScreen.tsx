@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 25,
-    backgroundColor: '#f0f4f7',
+    backgroundColor: '#f0f2f5', // App.tsx ve Auth.tsx ile uyumlu açık gri
   },
   header: {
     fontSize: 28,
@@ -192,10 +192,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   signInButton: {
-    backgroundColor: '#5cb85c', // İşyeri için farklı bir yeşil tonu
+    backgroundColor: '#0066CC', // Yeni birincil mavi
   },
   signUpButton: {
-    backgroundColor: '#f0ad4e', // İşyeri için turuncu tonu
+    backgroundColor: '#0066CC', // Yeni birincil mavi (Ana CTA)
   },
   buttonTitle: {
     fontWeight: 'bold',
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchAuthText: {
-    color: '#007bff',
+    color: '#0066CC', // Yeni birincil mavi
     fontSize: 15,
     fontWeight: '600',
   }

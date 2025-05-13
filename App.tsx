@@ -54,7 +54,7 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
 
   // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster
   return (
-    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#007bff' }}>
+    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#0066CC' }}>
       <Tab.Screen 
         name="Ana Sayfa" 
         component={HomeScreen} 
@@ -146,7 +146,7 @@ export default function App() {
   if (loadingSession || (session && loadingProfile)) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
+        <ActivityIndicator size="large" color="#0066CC" />
       </View>
     );
   }
@@ -186,6 +186,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f4f7', // Auth ekranlarıyla uyumlu arka plan
+    backgroundColor: '#f0f2f5', // Daha nötr bir açık gri
   },
 });
