@@ -22,7 +22,7 @@ export type RootStackParamList = {
   CustomerAuth: undefined;
   BusinessAuth: undefined;
   App: { session: Session; userProfile: UserProfile | null }; // App ekranına parametreler
-  BusinessDetail: { businessOwnerId: string }; // Yeni eklendi
+  BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
 };
 
 // Kullanıcı profili için bir arayüz tanımlayalım

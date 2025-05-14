@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform, Dimensions, Modal } from 'react-native'; // Modal ve useRef eklendi
-import { Text, Input, Button, Icon, Card } from '@rneui/themed';
+import { Text, Input, Button, Icon, Card, CheckBox } from '@rneui/themed'; // CheckBox eklendi
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps'; // PROVIDER_DEFAULT eklendi
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +18,12 @@ interface BusinessDetails {
   longitude: number | null; // Yeni eklendi
 }
 
+interface ServiceType {
+  id: string;
+  name: string;
+  icon_url?: string;
+}
+
 const MyBusinessScreen = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,8 +36,13 @@ const MyBusinessScreen = () => {
   const [longitude, setLongitude] = useState<number | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [currentBusinessId, setCurrentBusinessId] = useState<string | null>(null); // Eklenen işletmenin ID'sini tutmak için
   const [isPublished, setIsPublished] = useState(false);
   const [publishing, setPublishing] = useState(false);
+
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
+  const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<string[]>([]);
+  const [loadingServiceTypes, setLoadingServiceTypes] = useState(false);
 
   const [hasBusiness, setHasBusiness] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -42,51 +53,107 @@ const MyBusinessScreen = () => {
 
   const fetchOwnerIdAndInitialData = useCallback(async () => {
     setLoading(true);
+    setLoadingServiceTypes(true); // Hizmet türleri yüklemesini başlat
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const currentOwnerId = session.user.id;
       setOwnerId(currentOwnerId);
+
+      // Hizmet türlerini çek
+      try {
+        const { data: serviceTypesData, error: serviceTypesError } = await supabase
+          .from('ServiceTypes')
+          .select('id, name, icon_url');
+        if (serviceTypesError) throw serviceTypesError;
+        setServiceTypes(serviceTypesData || []);
+      } catch (error) {
+        if (error instanceof Error) Alert.alert('Hata', 'Hizmet türleri çekilirken bir sorun oluştu: ' + error.message);
+      } finally {
+        setLoadingServiceTypes(false);
+      }
       
       try {
-        // owner_id PK olduğu için, select'te id'ye gerek yok.
-        const { data, error } = await supabase
+        console.log(`[MyBusinessScreen] Fetching business for owner_id: ${currentOwnerId}`);
+        const { data, error: fetchError } = await supabase
           .from('businesses')
-          .select('name, description, address, latitude, longitude, photos, is_published') // latitude, longitude eklendi
+          .select('name, description, address, latitude, longitude, photos, is_published, id') // İşletme ID'sini de çekiyoruz
           .eq('owner_id', currentOwnerId)
-          .maybeSingle();
+          .limit(1) // Kullanıcıya ait ilk işletmeyi al
+          .maybeSingle(); // 0 veya 1 kayıt döndürür
 
-        if (error) throw error;
+        console.log('[MyBusinessScreen] Fetched business data (first one):', JSON.stringify(data, null, 2));
+        console.log('[MyBusinessScreen] Fetch business error:', JSON.stringify(fetchError, null, 2));
+
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116: "No rows found", bu bir hata değil eğer işletme yoksa.
+           console.error('[MyBusinessScreen] Supabase fetch error (not PGRST116):', fetchError);
+           throw fetchError;
+        }
+        // if (error) throw error; // Yukarıdaki if fetchError kontrolü ile değiştirildi
 
         if (data) {
           setBusinessName(data.name || '');
           setDescription(data.description || '');
           setAddress(data.address || '');
-          setLatitude(data.latitude); // latitude state'i ayarlandı
-          setLongitude(data.longitude); // longitude state'i ayarlandı
+          setLatitude(data.latitude);
+          setLongitude(data.longitude);
           setPhotos(Array.isArray(data.photos) ? data.photos : []);
           setIsPublished(data.is_published || false);
+          setCurrentBusinessId(data.id); // İşletme ID'sini state'e kaydet
           setHasBusiness(true);
           setIsEditing(false);
+
+          // İşletmeye ait hizmetleri çek
+          const { data: businessServicesData, error: bsError } = await supabase
+            .from('BusinessServices')
+            .select('service_type_id')
+            .eq('business_id', data.id); // İşletme ID'si ile filtrele
+
+          if (bsError) throw bsError;
+          setSelectedServiceTypeIds(businessServicesData?.map(bs => bs.service_type_id) || []);
+
         } else {
-          setHasBusiness(false);
-          setIsEditing(false);
-          setBusinessName('');
-          setDescription('');
-          setAddress('');
-          setLatitude(null); // İşyeri yoksa null yap
-          setLongitude(null); // İşyeri yoksa null yap
-          setPhotos([]);
-          setIsPublished(false);
+          // Eğer daha önce bir işletme vardıysa (hasBusiness true ise) ve şimdi veri gelmiyorsa,
+          // bu genellikle "Vazgeç" sonrası bir veri çekme hatası olabilir.
+          // Kullanıcının gördüğü bilgileri hemen silmek yerine uyarı verip düzenleme modunu kapat.
+          if (hasBusiness) {
+            Alert.alert('Uyarı', 'İşletme bilgileri güncellenirken bir sorun oluştu. Mevcut bilgiler gösteriliyor.');
+            setIsEditing(false); // Düzenleme modundan çık
+            // Diğer state'ler (businessName, description vb.) zaten dolu olduğu için sıfırlamıyoruz.
+          } else {
+            // Gerçekten hiç işletme yoksa veya ilk defa yükleniyorsa state'leri sıfırla.
+            setHasBusiness(false);
+            setIsEditing(false);
+            setCurrentBusinessId(null); // İşletme ID'sini temizle
+            setBusinessName('');
+            setDescription('');
+            setAddress('');
+            setLatitude(null);
+            setLongitude(null);
+            setPhotos([]);
+            setIsPublished(false);
+            setSelectedServiceTypeIds([]);
+          }
         }
       } catch (error) {
-        if (error instanceof Error) Alert.alert('Hata', 'İşyeri bilgileri çekilirken bir sorun oluştu: ' + error.message);
-        setHasBusiness(false);
-        setIsEditing(false);
+        if (error instanceof Error) {
+            Alert.alert('Hata', 'İşyeri bilgileri çekilirken bir sorun oluştu: ' + error.message);
+            console.error('[MyBusinessScreen] Catch block error while fetching business:', error);
+        } else {
+            Alert.alert('Hata', 'İşyeri bilgileri çekilirken bilinmeyen bir sorun oluştu.');
+            console.error('[MyBusinessScreen] Catch block unknown error while fetching business:', error);
+        }
+        // Hata durumunda, eğer daha önce bir işletme varsa, UI'ın boşalmaması için
+        // hasBusiness'ı false yapmıyoruz, sadece düzenleme modunu kapatıyoruz.
+        if (!hasBusiness) { // Sadece gerçekten işletme yoksa veya ilk yüklemede hata olduysa false yap.
+          setHasBusiness(false);
+        }
+        setIsEditing(false); // Her durumda düzenleme modundan çık
       } finally {
         setLoading(false);
       }
     } else {
-      setLoading(false); 
+      setLoading(false);
+      setLoadingServiceTypes(false);
       Alert.alert("Hata", "Kullanıcı oturumu bulunamadı.");
       setHasBusiness(false);
       setIsEditing(false);
@@ -208,47 +275,87 @@ const MyBusinessScreen = () => {
     if (!businessName.trim()) { Alert.alert('Eksik Bilgi', 'İşyeri adı boş bırakılamaz.'); return; }
     setSaving(true);
     try {
-      // upsertData'dan id çıkarıldı, owner_id PK olarak kullanılacak.
-      const upsertData: BusinessDetails = { 
-        owner_id: ownerId,
+      const businessDataToSave: Partial<BusinessDetails> & { owner_id: string } = { // BusinessFullDetails -> BusinessDetails
+        owner_id: ownerId, // owner_id her zaman gönderilmeli
         name: businessName,
         description: description,
         address: address,
-        latitude: latitude, // latitude eklendi
-        longitude: longitude, // longitude eklendi
+        latitude: latitude,
+        longitude: longitude,
         photos: photos,
         is_published: isPublished,
       };
 
-      console.log('Attempting to save business details. Upsert data:', JSON.stringify(upsertData, null, 2));
+      // Eğer mevcut bir işletmeyi güncelliyorsak (currentBusinessId varsa), id'yi de ekle
+      if (currentBusinessId) {
+        (businessDataToSave as any).id = currentBusinessId;
+      }
 
+      console.log('[MyBusinessScreen] Attempting to save/upsert business. Data:', JSON.stringify(businessDataToSave, null, 2));
+
+      // `upsert` işlemi, eğer `id` varsa ve eşleşiyorsa UPDATE, yoksa INSERT yapar (owner_id'ye göre değil, PK olan id'ye göre).
+      // Yeni kayıt için id Supabase tarafından oluşturulur. Güncelleme için id'yi sağlamalıyız.
+      // `onConflict` belirtilmediği için PK (id) üzerinden çakışma kontrolü yapar.
       const { error, data: savedData } = await supabase
         .from('businesses')
-        .upsert(upsertData) // onConflict belirtmeye gerek yok, PK (owner_id) üzerinden çalışır
-        .select()
-        .single(); 
+        .upsert(businessDataToSave) 
+        .select('id, name, description, address, latitude, longitude, photos, is_published')
+        .single(); // Başarılı upsert sonrası güncel veriyi tek satır olarak al
       
-      console.log('Supabase upsert response - error:', JSON.stringify(error, null, 2));
-      console.log('Supabase upsert response - savedData:', JSON.stringify(savedData, null, 2));
+      console.log('[MyBusinessScreen] Supabase upsert response - error:', JSON.stringify(error, null, 2));
+      console.log('[MyBusinessScreen] Supabase upsert response - savedData:', JSON.stringify(savedData, null, 2));
 
-      if (error) throw error;
+      if (error) {
+        console.error('[MyBusinessScreen] Error during upsert:', error);
+        throw error;
+      }
 
-      Alert.alert('Başarılı', 'İşyeri bilgileri kaydedildi!');
-      if (savedData) { 
-        // owner_id zaten state'de var ve PK. Diğer alanları savedData'dan güncelleyebiliriz.
+      if (savedData && savedData.id) {
+        const returnedBusinessId = savedData.id;
+        setCurrentBusinessId(returnedBusinessId); // Dönen ID'yi state'e kaydet (yeni ekleme durumunda önemli)
+        setHasBusiness(true); // İşletme artık var
+
+        // Hizmet türlerini güncelle
+        console.log(`[MyBusinessScreen] Updating services for business_id: ${returnedBusinessId}`);
+        const { error: deleteError } = await supabase
+          .from('BusinessServices')
+          .delete()
+          .eq('business_id', returnedBusinessId); // businessId -> returnedBusinessId
+        
+        if (deleteError) {
+          console.error('[MyBusinessScreen] Error deleting old services:', deleteError);
+          throw deleteError;
+        }
+
+        // Sonra yeni seçilen hizmetleri ekle
+        if (selectedServiceTypeIds.length > 0) {
+          const serviceRecords = selectedServiceTypeIds.map(serviceTypeId => ({
+            business_id: returnedBusinessId, // businessId -> returnedBusinessId
+            service_type_id: serviceTypeId
+          }));
+          console.log('[MyBusinessScreen] Inserting new services:', serviceRecords);
+          const { error: insertError } = await supabase.from('BusinessServices').insert(serviceRecords);
+          if (insertError) throw insertError;
+        }
+      }
+
+      Alert.alert('Başarılı', 'İşyeri bilgileri ve hizmet türleri kaydedildi!');
+      if (savedData) {
+        // State'i dönen güncel veriyle ayarla
         setBusinessName(savedData.name || '');
         setDescription(savedData.description || '');
         setAddress(savedData.address || '');
-        setLatitude(savedData.latitude); // latitude güncellendi
-        setLongitude(savedData.longitude); // longitude güncellendi
+        setLatitude(savedData.latitude);
+        setLongitude(savedData.longitude);
         setPhotos(Array.isArray(savedData.photos) ? savedData.photos : []);
         setIsPublished(savedData.is_published || false);
-        setHasBusiness(true);
+        // selectedServiceTypeIds zaten güncel olmalı
       }
-      setIsEditing(false);
+      setIsEditing(false); // Düzenleme modundan çık
     } catch (error) {
+      console.error('[MyBusinessScreen] Error in handleSaveBusinessDetails catch block:', error);
       if (error instanceof Error) Alert.alert('Kaydetme Hatası', error.message);
-      else Alert.alert('Kaydetme Hatası', 'Bilinmeyen bir hata oluştu.');
+      else Alert.alert('Kaydetme Hatası', 'İşyeri bilgileri kaydedilirken bilinmeyen bir hata oluştu.');
     } finally {
       setSaving(false);
     }
@@ -309,7 +416,15 @@ const MyBusinessScreen = () => {
     const { latitude: newLat, longitude: newLng } = e.nativeEvent.coordinate;
     setLatitude(newLat);
     setLongitude(newLng);
-  }
+  };
+
+  const handleServiceTypeToggle = (serviceTypeId: string) => {
+    setSelectedServiceTypeIds(prev => 
+      prev.includes(serviceTypeId) 
+        ? prev.filter(id => id !== serviceTypeId) 
+        : [...prev, serviceTypeId]
+    );
+  };
 
   const renderEditForm = () => (
     <View>
@@ -317,6 +432,28 @@ const MyBusinessScreen = () => {
       <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       
+      <Text style={styles.sectionTitle}>Hizmet Türleri</Text>
+      {loadingServiceTypes ? (
+        <ActivityIndicator style={{ marginVertical: 10 }} />
+      ) : serviceTypes.length === 0 ? (
+        <Text style={styles.infoTextSmall}>Seçilebilecek hizmet türü bulunamadı. Lütfen Supabase panelinden 'ServiceTypes' tablosuna veri ekleyin.</Text>
+      ) : (
+        <View style={styles.serviceTypesContainer}>
+          {serviceTypes.map(service => (
+            <CheckBox
+              key={service.id}
+              title={service.name}
+              checked={selectedServiceTypeIds.includes(service.id)}
+              onPress={() => handleServiceTypeToggle(service.id)}
+              containerStyle={styles.checkboxContainer}
+              textStyle={styles.checkboxText}
+              checkedColor="#007bff"
+              disabled={saving || uploadingPhoto || publishing}
+            />
+          ))}
+        </View>
+      )}
+
       <Text style={styles.sectionTitle}>Konum Seçimi</Text>
       <TouchableOpacity onPress={() => setFullScreenMapVisible(true)} activeOpacity={0.8}>
         <View style={styles.mapContainer}>
@@ -670,12 +807,30 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12, minWidth: 200 },
   centeredContent: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingTop: 50 },
   infoText: { fontSize: 16, color: '#6c757d', marginBottom: 20, textAlign: 'center' },
+  infoTextSmall: { fontSize: 14, color: '#6c757d', marginVertical: 10, textAlign: 'center', fontStyle: 'italic' },
   card: { borderRadius: 10, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 3 },
   cardTitle: { textAlign: 'center', color: '#333', fontWeight:'bold', fontSize: 20 },
   previewLabel: { fontSize: 14, color: '#555', fontWeight: 'bold', marginTop: 10 },
   previewText: { fontSize: 16, color: '#333', marginBottom: 10, lineHeight: 22 },
   photosScrollViewPreview: { marginTop: 5, marginBottom:15, maxHeight:110 },
   previewPhoto: { width: 90, height: 90, borderRadius: 6, marginRight: 8, backgroundColor: '#e0e0e0' },
+  serviceTypesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 10,
+  },
+  checkboxContainer: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
+    marginLeft: 0,
+    marginRight: 15, // Checkboxlar arası boşluk
+    marginVertical: 5,
+  },
+  checkboxText: {
+    fontWeight: 'normal',
+    marginLeft: 5,
+  },
 });
 
 export default MyBusinessScreen;

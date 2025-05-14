@@ -7,7 +7,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 
 // App.tsx'deki RootStackParamList'e göre güncellenecek
 type RootStackParamList = {
-  BusinessDetail: { businessOwnerId: string };
+  BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
   // Diğer ekranlarınız...
 };
 
@@ -32,14 +32,14 @@ const screenHeight = Dimensions.get('window').height;
 
 const BusinessDetailScreen = () => {
   const route = useRoute<BusinessDetailScreenRouteProp>();
-  const { businessOwnerId } = route.params;
+  const { businessId } = route.params; // businessOwnerId -> businessId
 
   const [business, setBusiness] = useState<BusinessFullDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchBusinessDetails = useCallback(async () => {
-    if (!businessOwnerId) {
+    if (!businessId) { // businessOwnerId -> businessId
       setError('İşletme kimliği bulunamadı.');
       setLoading(false);
       return;
@@ -50,7 +50,7 @@ const BusinessDetailScreen = () => {
       const { data, error: fetchError } = await supabase
         .from('businesses')
         .select('owner_id, name, description, address, photos, latitude, longitude, is_published') // category, phone, website kaldırıldı
-        .eq('owner_id', businessOwnerId)
+        .eq('id', businessId) // owner_id -> id
         .eq('is_published', true)
         .single();
 
@@ -74,7 +74,7 @@ const BusinessDetailScreen = () => {
     } finally {
       setLoading(false);
     }
-  }, [businessOwnerId]);
+  }, [businessId]); // businessOwnerId -> businessId
 
   useEffect(() => {
     fetchBusinessDetails();
