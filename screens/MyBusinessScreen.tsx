@@ -12,6 +12,7 @@ interface BusinessDetails {
   name: string;
   description: string;
   address: string;
+  city_id?: string | null; // Yeni eklendi: Şehir ID'si
   photos: string[];
   is_published: boolean;
   latitude: number | null; // Yeni eklendi
@@ -22,6 +23,11 @@ interface ServiceType {
   id: string;
   name: string;
   icon_url?: string;
+}
+
+interface City { // Yeni eklendi: Şehir arayüzü
+  id: string;
+  name: string;
 }
 
 const MyBusinessScreen = () => {
@@ -40,6 +46,11 @@ const MyBusinessScreen = () => {
   const [isPublished, setIsPublished] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
+  const [cities, setCities] = useState<City[]>([]); // Yeni eklendi: Şehirler listesi
+  const [selectedCityId, setSelectedCityId] = useState<string | null>(null); // Yeni eklendi: Seçilen şehir ID'si
+  const [isCityModalVisible, setIsCityModalVisible] = useState(false); // Yeni eklendi: Şehir seçme modalı görünürlüğü
+  const [loadingCities, setLoadingCities] = useState(true); // Başlangıçta true olmalı
+
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<string[]>([]);
   const [loadingServiceTypes, setLoadingServiceTypes] = useState(false);
@@ -53,7 +64,8 @@ const MyBusinessScreen = () => {
 
   const fetchOwnerIdAndInitialData = useCallback(async () => {
     setLoading(true);
-    setLoadingServiceTypes(true); // Hizmet türleri yüklemesini başlat
+    setLoadingServiceTypes(true);
+    setLoadingCities(true); // Şehir yüklemesini başlat
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const currentOwnerId = session.user.id;
@@ -71,12 +83,32 @@ const MyBusinessScreen = () => {
       } finally {
         setLoadingServiceTypes(false);
       }
+
+      // Şehirleri çek
+      try {
+        console.log('[MyBusinessScreen] Şehir verileri çekiliyor...');
+        const { data: citiesData, error: citiesError } = await supabase
+          .from('cities')
+          .select('id, name')
+          .order('name', { ascending: true });
+        
+        console.log('[MyBusinessScreen] Şehir verileri:', JSON.stringify(citiesData));
+        console.log('[MyBusinessScreen] Şehir sorgu hatası:', JSON.stringify(citiesError));
+        
+        if (citiesError) throw citiesError;
+        setCities(citiesData || []);
+      } catch (error) {
+        console.error('[MyBusinessScreen] Şehir çekme hatası:', error);
+        if (error instanceof Error) Alert.alert('Hata', 'Şehirler çekilirken bir sorun oluştu: ' + error.message);
+      } finally {
+        setLoadingCities(false);
+      }
       
       try {
         console.log(`[MyBusinessScreen] Fetching business for owner_id: ${currentOwnerId}`);
         const { data, error: fetchError } = await supabase
           .from('businesses')
-          .select('name, description, address, latitude, longitude, photos, is_published, id') // İşletme ID'sini de çekiyoruz
+          .select('name, description, address, latitude, longitude, photos, is_published, id, city_id') // city_id eklendi
           .eq('owner_id', currentOwnerId)
           .limit(1) // Kullanıcıya ait ilk işletmeyi al
           .maybeSingle(); // 0 veya 1 kayıt döndürür
@@ -98,7 +130,8 @@ const MyBusinessScreen = () => {
           setLongitude(data.longitude);
           setPhotos(Array.isArray(data.photos) ? data.photos : []);
           setIsPublished(data.is_published || false);
-          setCurrentBusinessId(data.id); // İşletme ID'sini state'e kaydet
+          setCurrentBusinessId(data.id);
+          setSelectedCityId(data.city_id || null); // Seçili şehir ID'sini state'e ata
           setHasBusiness(true);
           setIsEditing(false);
 
@@ -131,6 +164,7 @@ const MyBusinessScreen = () => {
             setLongitude(null);
             setPhotos([]);
             setIsPublished(false);
+            setSelectedCityId(null); // Şehir ID'sini de sıfırla
             setSelectedServiceTypeIds([]);
           }
         }
@@ -154,6 +188,7 @@ const MyBusinessScreen = () => {
     } else {
       setLoading(false);
       setLoadingServiceTypes(false);
+      setLoadingCities(false); // Şehir yüklemesini de durdur
       Alert.alert("Hata", "Kullanıcı oturumu bulunamadı.");
       setHasBusiness(false);
       setIsEditing(false);
@@ -271,39 +306,56 @@ const MyBusinessScreen = () => {
   };
 
   const handleSaveBusinessDetails = async () => {
-    if (!ownerId) { Alert.alert('Hata', 'Kullanıcı kimliği bulunamadı.'); return; }
-    if (!businessName.trim()) { Alert.alert('Eksik Bilgi', 'İşyeri adı boş bırakılamaz.'); return; }
+    if (!ownerId) {
+      Alert.alert("Hata", "İşlem için kullanıcı kimliği bulunamadı.");
+      return;
+    }
+    if (!businessName.trim()) {
+      Alert.alert("Eksik Bilgi", "İşletme adı boş bırakılamaz.");
+      return;
+    }
+    if (!selectedCityId) { // Şehir seçimi kontrolü
+      Alert.alert("Eksik Bilgi", "Lütfen işletmenizin bulunduğu şehri seçin.");
+      return;
+    }
+
     setSaving(true);
-    try {
-      const businessDataToSave: Partial<BusinessDetails> & { owner_id: string } = { // BusinessFullDetails -> BusinessDetails
-        owner_id: ownerId, // owner_id her zaman gönderilmeli
-        name: businessName,
-        description: description,
-        address: address,
+    // `id` alanı `BusinessDetails` arayüzünden çıkarılmıştı, bu yüzden Partial kullanırken dikkat.
+    // Upsert için `id` gerekebilir, ya da insert/update ayrı ele alınmalı.
+    // Mevcut upsert mantığı `id`yi `currentBusinessId` üzerinden alıyor.
+    const businessDataToSave = {
+        owner_id: ownerId,
+        name: businessName.trim(),
+        description: description.trim(),
+        address: address.trim(),
         latitude: latitude,
         longitude: longitude,
         photos: photos,
         is_published: isPublished,
-      };
+        city_id: selectedCityId, // Seçilen şehir ID'sini ekle
+        // Eğer currentBusinessId varsa, upsert bunu güncelleme için kullanacak.
+        // Yoksa ve owner_id varsa yeni kayıt oluşturacak (eğer RLS izin veriyorsa ve owner_id için unique constraint yoksa)
+        // Genellikle PK olan `id` üzerinden upsert yapılır. Owner_id üzerinden upsert için onConflict owner_id olmalı.
+        // Şimdiki upsert, eğer id verilirse onu kullanır, verilmezse insert yapar.
+        ...(currentBusinessId && { id: currentBusinessId }), // Var olanı güncellemek için ID ekle
+        updated_at: new Date(), // Her kayıtta güncellensin
+    };
 
-      // Eğer mevcut bir işletmeyi güncelliyorsak (currentBusinessId varsa), id'yi de ekle
-      if (currentBusinessId) {
-        (businessDataToSave as any).id = currentBusinessId;
-      }
-
-      console.log('[MyBusinessScreen] Attempting to save/upsert business. Data:', JSON.stringify(businessDataToSave, null, 2));
-
-      // `upsert` işlemi, eğer `id` varsa ve eşleşiyorsa UPDATE, yoksa INSERT yapar (owner_id'ye göre değil, PK olan id'ye göre).
-      // Yeni kayıt için id Supabase tarafından oluşturulur. Güncelleme için id'yi sağlamalıyız.
-      // `onConflict` belirtilmediği için PK (id) üzerinden çakışma kontrolü yapar.
+    try {
       const { error, data: savedData } = await supabase
         .from('businesses')
-        .upsert(businessDataToSave) 
-        .select('id, name, description, address, latitude, longitude, photos, is_published')
-        .single(); // Başarılı upsert sonrası güncel veriyi tek satır olarak al
-      
-      console.log('[MyBusinessScreen] Supabase upsert response - error:', JSON.stringify(error, null, 2));
-      console.log('[MyBusinessScreen] Supabase upsert response - savedData:', JSON.stringify(savedData, null, 2));
+        .upsert(businessDataToSave, {
+            // owner_id üzerinden upsert yapmak istiyorsak ve owner_id unique ise:
+            // onConflict: 'owner_id',
+            // ignoreDuplicates: false,
+            // Genellikle PK (id) üzerinden upsert daha standarttır. 
+            // Eğer yeni kayıt ve owner_id zaten varsa çakışma olmaması için PK (id) kullanılmalı.
+            // Bu durumda, eğer `currentBusinessId` yoksa bu bir INSERT olmalı.
+            // Eğer `currentBusinessId` varsa bu bir UPDATE olmalı.
+            // `upsert` bu ayrımı `id`nin varlığına göre yapacaktır.
+        })
+        .select('id, name, description, address, latitude, longitude, photos, is_published, city_id') // city_id de seçilsin
+        .single();
 
       if (error) {
         console.error('[MyBusinessScreen] Error during upsert:', error);
@@ -345,6 +397,7 @@ const MyBusinessScreen = () => {
         setBusinessName(savedData.name || '');
         setDescription(savedData.description || '');
         setAddress(savedData.address || '');
+        setSelectedCityId(savedData.city_id || null); // city_id de güncellensin
         setLatitude(savedData.latitude);
         setLongitude(savedData.longitude);
         setPhotos(Array.isArray(savedData.photos) ? savedData.photos : []);
@@ -426,9 +479,64 @@ const MyBusinessScreen = () => {
     );
   };
 
+  // Şehir Seçme Modalı
+  const renderCityPickerModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={isCityModalVisible}
+      onRequestClose={() => setIsCityModalVisible(false)}
+    >
+      <TouchableOpacity style={styles.modalOverlay} onPress={() => setIsCityModalVisible(false)} activeOpacity={1}>
+        <TouchableOpacity style={styles.modalContentSmall} activeOpacity={1} onPress={() => { /* Modal içeriğine tıklama yayılmasın */ }}>
+          <Text style={styles.modalTitleSmall}>Şehir Seçin</Text>
+          {loadingCities ? (
+            <ActivityIndicator size="large" color="#0066CC" style={{marginVertical: 20}} />
+          ) : cities.length === 0 ? (
+            <View style={{padding: 20, alignItems: 'center'}}>
+              <Icon name="alert-circle-outline" type="ionicon" color="#F44336" size={40} />
+              <Text style={[styles.modalItemText, {textAlign: 'center', marginTop: 10, marginBottom: 5}]}>
+                Şehir listesi yüklenemedi
+              </Text>
+              <Text style={{color: '#666', textAlign: 'center', marginBottom: 10}}>
+                Veritabanında şehir verisi bulunamadı veya erişim hatası oluştu.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView>
+              {cities.map(city => (
+                <TouchableOpacity 
+                  key={city.id} 
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedCityId(city.id);
+                    setIsCityModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{city.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          <Button title="Kapat" onPress={() => setIsCityModalVisible(false)} buttonStyle={styles.modalCloseButton} titleStyle={styles.modalCloseButtonText}/>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   const renderEditForm = () => (
     <View>
       <Input label="İşyeri Adı" placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      
+      {/* Şehir Seçici */}
+      <Text style={styles.label}>Şehir</Text>
+      <TouchableOpacity onPress={() => setIsCityModalVisible(true)} style={styles.pickerButton} disabled={saving || uploadingPhoto || publishing}>
+        <Text style={styles.pickerButtonText}>
+          {selectedCityId ? (cities.find(c => c.id === selectedCityId)?.name || "Şehir Bulunamadı") : "Şehir Seçiniz"}
+        </Text>
+        <Icon name="chevron-down" type="material-community" color="#555" />
+      </TouchableOpacity>
+
       <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
       
@@ -649,9 +757,23 @@ const MyBusinessScreen = () => {
       {isEditing ? renderEditForm() : (hasBusiness ? renderPreview() : (
         <View style={styles.centeredContent}>
           <Text style={styles.infoText}>Henüz bir işyeri kaydınız bulunmuyor.</Text>
-          <Button title="Yeni İşyeri Ekle" onPress={() => { setIsEditing(true); setHasBusiness(false); /* businessId'ye gerek yok */ setBusinessName(''); setDescription(''); setAddress(''); setPhotos([]); }} icon={{ name: 'add-circle', type: 'ionicon', color: 'white' }} buttonStyle={styles.addButton} />
+          <Button title="Yeni İşyeri Ekle" onPress={() => { 
+            setIsEditing(true); 
+            setHasBusiness(false); 
+            setCurrentBusinessId(null); // Yeni kayıt için ID'yi sıfırla
+            setBusinessName(''); 
+            setDescription(''); 
+            setAddress(''); 
+            setPhotos([]); 
+            setIsPublished(false); 
+            setSelectedCityId(null); // Yeni kayıt için şehir ID'sini sıfırla
+            setSelectedServiceTypeIds([]);
+          }} 
+          icon={{ name: 'add-circle', type: 'ionicon', color: 'white' }} 
+          buttonStyle={styles.addButton} />
         </View>
       ))}
+      {renderCityPickerModal()} {/* Şehir seçme modalını render et */}
     </ScrollView>
   );
 };
@@ -830,6 +952,81 @@ const styles = StyleSheet.create({
   checkboxText: {
     fontWeight: 'normal',
     marginLeft: 5,
+  },
+  label: { // Input label'ları için genel stil
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 8,
+    marginLeft: 2, // Hafif iç boşluk
+  },
+  pickerButton: { // Şehir seçici butonu için stil
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 15, // Yüksekliği artırıldı
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    marginBottom: 15, // Alt boşluk
+    // minHeight: 50, // Input ile benzer yükseklik
+  },
+  pickerButtonText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  modalOverlay: { // Modal için genel overlay
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)', // Biraz daha koyu overlay
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContentSmall: { // Şehir/Hizmet seçimi gibi küçük modallar için
+    backgroundColor: 'white',
+    borderRadius: 12, // Daha yuvarlak köşeler
+    paddingTop: 20,
+    paddingBottom: 10, // Alt boşluk azaltıldı
+    paddingHorizontal: 0, // İçerik kendi padding'ini yönetecek
+    width: '85%', // Genişlik biraz artırıldı
+    maxHeight: '70%', // Yükseklik biraz artırıldı
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitleSmall: {
+    fontSize: 20, // Başlık büyütüldü
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+    color: '#333',
+    paddingHorizontal: 20, // Başlık için yan boşluklar
+  },
+  modalItem: {
+    paddingVertical: 15, // Öğe yüksekliği artırıldı
+    paddingHorizontal: 20, // Yan boşluklar eklendi
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0', // Daha yumuşak ayırıcı
+  },
+  modalItemText: {
+    fontSize: 17, // Metin boyutu artırıldı
+    textAlign: 'left', // Metin sola hizalandı
+    color: '#333',
+  },
+  modalCloseButton: {
+    marginTop: 10, // Kapat butonu ve liste arası boşluk
+    marginHorizontal: 20, // Buton için yan boşluklar
+    marginBottom: 10,
+    backgroundColor: '#0066CC',
+    paddingVertical: 8, // Buton yüksekliği azaltıldı
+    borderRadius: 8,
+  },
+  modalCloseButtonText: { // Kapat butonu metin stili
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

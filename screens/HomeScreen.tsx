@@ -21,6 +21,8 @@ interface ListedBusiness {
   description: string | null;
   address: string | null;
   photos: string[] | null;
+  city_id?: string | null; // Şehir ID'si eklendi
+  city_name?: string | null; // Şehir adı eklendi
 }
 
 interface ServiceType {
@@ -29,14 +31,22 @@ interface ServiceType {
   icon_url?: string;
 }
 
+interface City { // Şehir arayüzü eklendi
+  id: string;
+  name: string;
+}
+
 const HomeScreen = () => {
   const [allBusinesses, setAllBusinesses] = useState<ListedBusiness[]>([]);
   const [filteredBusinesses, setFilteredBusinesses] = useState<ListedBusiness[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<string[]>([]);
+  const [cities, setCities] = useState<City[]>([]); // Şehirler state'i eklendi
+  const [selectedCityId, setSelectedCityId] = useState<string | null>(null); // Seçilen şehir ID'si
   
   const [loadingBusinesses, setLoadingBusinesses] = useState(true);
   const [loadingServiceTypes, setLoadingServiceTypes] = useState(true);
+  const [loadingCities, setLoadingCities] = useState(true); // Şehir yükleme durumu eklendi
   const [error, setError] = useState<string | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
 
@@ -45,6 +55,7 @@ const HomeScreen = () => {
   const fetchData = useCallback(async () => {
     setLoadingBusinesses(true);
     setLoadingServiceTypes(true);
+    setLoadingCities(true); // Şehir yüklemesini başlat
     setError(null);
     try {
       // Hizmet türlerini çek
@@ -54,17 +65,45 @@ const HomeScreen = () => {
       if (serviceTypesError) throw serviceTypesError;
       setServiceTypes(serviceTypesData || []);
 
-      // Yayınlanmış işletmeleri çek (RPC kullanmadan önce basit filtreleme)
-      // owner_id yerine id'yi PK olarak kullanıyoruz, bu yüzden select'te id olmalı.
+      // Şehirleri çek
+      const { data: citiesData, error: citiesError } = await supabase
+        .from('cities')
+        .select('id, name')
+        .order('name', { ascending: true });
+      if (citiesError) throw citiesError;
+      setCities(citiesData || []);
+      setLoadingCities(false);
+
+      // Yayınlanmış işletmeleri çek
       const { data: businessesData, error: businessesError } = await supabase
         .from('businesses')
-        .select('id, owner_id, name, description, address, photos')
+        .select(`
+          id, 
+          owner_id, 
+          name, 
+          description, 
+          address, 
+          photos,
+          city_id,
+          city:cities(name)
+        `)
         .eq('is_published', true);
 
       if (businessesError) throw businessesError;
       
-      setAllBusinesses(businessesData || []);
-      setFilteredBusinesses(businessesData || []); // Başlangıçta tümü filtrelenmiş
+      // İşyeri verilerini dönüştür ve şehir adını ekle
+      const processedBusinesses = businessesData?.map(business => {
+        // TypeScript'e daha açık bilgi vermek için interfaceleri kullan
+        const cityInfo = business.city as { name: string }[] | null;
+        return {
+          ...business,
+          city_name: cityInfo && cityInfo.length > 0 ? cityInfo[0].name : null,
+          city: undefined // Orijinal city nesnesini kaldır, city_name kullan
+        };
+      }) || [];
+      
+      setAllBusinesses(processedBusinesses);
+      setFilteredBusinesses(processedBusinesses); // Başlangıçta tümü filtrelenmiş
 
     } catch (err) {
       if (err instanceof Error) {
@@ -77,9 +116,11 @@ const HomeScreen = () => {
       setAllBusinesses([]);
       setFilteredBusinesses([]);
       setServiceTypes([]);
+      setCities([]);
     } finally {
       setLoadingBusinesses(false);
       setLoadingServiceTypes(false);
+      setLoadingCities(false);
     }
   }, []);
 
@@ -94,42 +135,32 @@ const HomeScreen = () => {
     setLoadingBusinesses(true);
     setError(null);
 
-    // selectedServiceTypeIds boş olsa bile RPC'ye gönderebiliriz,
-    // RPC fonksiyonu bu durumu ele alacak şekilde güncellendi (SQL tanımında array_length kontrolü var).
-    // if (selectedServiceTypeIds.length === 0) {
-    //   setFilteredBusinesses(allBusinesses);
-    //   setLoadingBusinesses(false);
-    //   return;
-    // }
-
     try {
-      // Önerilen RPC fonksiyonunu kullanma
-      const { data, error } = await supabase.rpc('get_businesses_by_service_types', { 
-        p_service_type_ids: selectedServiceTypeIds // RPC'ye parametre olarak gönder
-      });
-
-      if (error) {
-        console.error("RPC Error:", error);
-        throw error;
+      let filteredData = [...allBusinesses];
+      
+      // Şehir filtresini uygula
+      if (selectedCityId) {
+        filteredData = filteredData.filter(business => business.city_id === selectedCityId);
       }
-      setFilteredBusinesses(data || []); // RPC'den dönen veri ile state'i güncelle
-
-      /* 
-      // RPC yoksa istemci tarafı filtreleme (BU KISIM YORUM SATIRI YAPILDI)
-      const { data: businessServiceEntries, error: bsError } = await supabase
-        .from('BusinessServices')
-        .select('business_id')
-        .in('service_type_id', selectedServiceTypeIds);
       
-      if (bsError) throw bsError;
+      // Hizmet türü filtresini uygula
+      if (selectedServiceTypeIds.length > 0) {
+        // Önerilen RPC fonksiyonunu kullanma
+        const { data, error } = await supabase.rpc('get_businesses_by_service_types', { 
+          p_service_type_ids: selectedServiceTypeIds // RPC'ye parametre olarak gönder
+        });
+
+        if (error) {
+          console.error("RPC Error:", error);
+          throw error;
+        }
+        
+        // Hizmet türlerinden gelen işyerlerini ve şehir filtresinin kesişimini al
+        const filteredIds = data?.map((item: any) => item.id) || [];
+        filteredData = filteredData.filter(business => filteredIds.includes(business.id));
+      }
       
-      const businessIdsWithSelectedServices = businessServiceEntries.map(entry => entry.business_id);
-      const uniqueBusinessIds = [...new Set(businessIdsWithSelectedServices)];
-
-      const filtered = allBusinesses.filter(business => uniqueBusinessIds.includes(business.id));
-      setFilteredBusinesses(filtered);
-      */
-
+      setFilteredBusinesses(filteredData);
     } catch (err) {
       if (err instanceof Error) {
         setError('Filtreleme sırasında bir hata oluştu: ' + err.message);
@@ -146,6 +177,7 @@ const HomeScreen = () => {
 
   const clearFilters = () => {
     setSelectedServiceTypeIds([]);
+    setSelectedCityId(null); // Şehir filtresini de temizle
     setFilteredBusinesses(allBusinesses);
     setFilterModalVisible(false);
   };
@@ -219,7 +251,34 @@ const HomeScreen = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Hizmet Türüne Göre Filtrele</Text>
+            <Text style={styles.modalTitle}>Filtreleme Seçenekleri</Text>
+            
+            {/* Şehir Filtresi */}
+            <Text style={styles.modalSubtitle}>Şehir Seçimi</Text>
+            {loadingCities ? (
+              <ActivityIndicator size="small" color="#0066CC" style={{ marginVertical: 10 }} />
+            ) : (
+              <ScrollView style={[styles.modalScrollView, {maxHeight: Dimensions.get('window').height * 0.2}]} horizontal>
+                <TouchableOpacity
+                  style={[styles.cityChip, !selectedCityId && styles.cityChipSelected]}
+                  onPress={() => setSelectedCityId(null)}
+                >
+                  <Text style={[styles.cityChipText, !selectedCityId && styles.cityChipTextSelected]}>Tümü</Text>
+                </TouchableOpacity>
+                {cities.map((city) => (
+                  <TouchableOpacity
+                    key={city.id}
+                    style={[styles.cityChip, selectedCityId === city.id && styles.cityChipSelected]}
+                    onPress={() => setSelectedCityId(city.id)}
+                  >
+                    <Text style={[styles.cityChipText, selectedCityId === city.id && styles.cityChipTextSelected]}>{city.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            
+            {/* Hizmet Türü Filtresi */}
+            <Text style={styles.modalSubtitle}>Hizmet Türü</Text>
             <ScrollView style={styles.modalScrollView}>
               {serviceTypes.map((service) => (
                 <CheckBox
@@ -265,7 +324,7 @@ const HomeScreen = () => {
                 <Text style={styles.headerTitle}>Merhaba!</Text>
                 <Button 
                   icon={<Icon name="filter-variant" type="material-community" color="#0066CC" size={22} />} 
-                  title="Filtrele"
+                  title={`Filtrele${selectedCityId || selectedServiceTypeIds.length > 0 ? ' (*)' : ''}`}
                   type="outline" 
                   onPress={() => setFilterModalVisible(true)} 
                   buttonStyle={styles.filterButton}
@@ -279,7 +338,9 @@ const HomeScreen = () => {
           <View style={styles.centered}>
             <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
             <Text style={styles.emptyText}>
-              {selectedServiceTypeIds.length > 0 ? "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀"}
+              {selectedCityId || selectedServiceTypeIds.length > 0 ? 
+                "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : 
+                "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀"}
             </Text>
           </View>
         }
@@ -517,7 +578,36 @@ const styles = StyleSheet.create({
   modalButtonTextApply: {
     color: 'white',
     fontWeight: '600',
-  }
+  },
+  modalSubtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginTop: 15,
+    marginBottom: 10,
+  },
+  cityChip: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
+    marginBottom: 10,
+    backgroundColor: '#EEF2F7',
+    borderWidth: 1,
+    borderColor: '#DDE4EB',
+  },
+  cityChipSelected: {
+    backgroundColor: '#0066CC',
+    borderColor: '#0066CC',
+  },
+  cityChipText: {
+    fontSize: 14,
+    color: '#4A5568',
+  },
+  cityChipTextSelected: {
+    color: 'white',
+    fontWeight: '600',
+  },
 });
 
 export default HomeScreen;
