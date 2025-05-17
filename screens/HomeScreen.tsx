@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image, Modal, ScrollView, Dimensions, StatusBar, SafeAreaView } from 'react-native'; // Image olarak değiştirildi, StatusBar ve SafeAreaView eklendi
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image, Modal, ScrollView, Dimensions, StatusBar, SafeAreaView, Platform } from 'react-native'; // Image olarak değiştirildi, StatusBar ve SafeAreaView eklendi
 import { Card, Icon, Button, CheckBox } from '@rneui/themed'; // Button, CheckBox eklendi
 import { supabase } from '../lib/supabase';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -166,18 +166,19 @@ const HomeScreen = () => {
           <Card.Image source={{ uri: item.photos[0] }} style={styles.cardImage} resizeMode="cover" />
         ) : (
           <View style={styles.noImageContainer}>
-            <Icon name="image-off-outline" type="material-community" size={50} color="#ccc" />
+            <Icon name="storefront-outline" type="material-community" size={60} color="#A0D2FA" />
+            <Text style={styles.noImageText}>Harika Bir Yer</Text>
           </View>
         )}
-        <View style={{paddingHorizontal: 12, paddingVertical: 10}}>
-          <Text style={styles.cardTitle}>{item.name || ''}</Text>
-          <Card.Divider />
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.name || ''}</Text>
+          <Card.Divider style={styles.cardDivider} />
           <Text style={styles.cardDescription} numberOfLines={2}>
-            {item.description || 'Açıklama bulunmuyor.'}
+            {item.description || 'Açıklama yakında eklenecek.'}
           </Text>
           {item.address && (
             <View style={styles.addressContainer}>
-              <Icon name="location-pin" type="material" size={14} color="#555" style={styles.addressIcon} />
+              <Icon name="location-pin" type="material" size={16} color="#0066CC" style={styles.addressIcon} />
               <Text style={styles.addressTextContent} numberOfLines={1}>{item.address}</Text>
             </View>
           )}
@@ -198,8 +199,8 @@ const HomeScreen = () => {
   if (error) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" type="ionicon" size={50} color="red" />
-        <Text style={styles.errorText}>{error}</Text>
+        <Icon name="alert-decagram-outline" type="material-community" size={60} color="#FF7675" />
+        <Text style={styles.errorText}>Bir şeyler ters gitti ama biz buradayız! Tekrar dener misin? 🙏</Text>
         <TouchableOpacity onPress={fetchData} style={styles.retryButton}>
           <Text style={styles.retryButtonText}>Tekrar Dene</Text>
         </TouchableOpacity>
@@ -228,7 +229,8 @@ const HomeScreen = () => {
                   onPress={() => handleServiceTypeToggle(service.id)}
                   containerStyle={styles.checkboxContainerModal}
                   textStyle={styles.checkboxTextModal}
-                  checkedColor="#007bff"
+                  checkedColor="#0066CC"
+                  uncheckedColor="#34495E"
                 />
               ))}
             </ScrollView>
@@ -254,26 +256,30 @@ const HomeScreen = () => {
       <FlatList
         data={filteredBusinesses}
         renderItem={renderBusinessItem}
-        keyExtractor={(item) => item.id} // PK olarak id kullanılıyor
+        keyExtractor={(item) => item.id}
         contentContainerStyle={[styles.listContainer, {paddingTop: 10}]}
         ListHeaderComponent={
-          <View style={[styles.headerContainer, {marginTop: 40}]}>
-            <Text style={styles.headerTitle}>Keşfet</Text>
-            <Button 
-              icon={<Icon name="filter" type="ionicon" color="#0066CC" size={20} />} 
-              title="Filtrele"
-              type="outline" 
-              onPress={() => setFilterModalVisible(true)} 
-              buttonStyle={styles.filterButton}
-              titleStyle={styles.filterButtonTitle}
-            />
+          <View style={styles.headerOuterContainer}>
+            <View style={styles.gradientHeader}>
+              <View style={styles.headerContainer}>
+                <Text style={styles.headerTitle}>Merhaba!</Text>
+                <Button 
+                  icon={<Icon name="filter-variant" type="material-community" color="#0066CC" size={22} />} 
+                  title="Filtrele"
+                  type="outline" 
+                  onPress={() => setFilterModalVisible(true)} 
+                  buttonStyle={styles.filterButton}
+                  titleStyle={styles.filterButtonTitle}
+                />
+              </View>
+            </View>
           </View>
         }
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Icon name="store-search-outline" type="material-community" size={50} color="#888" />
+            <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
             <Text style={styles.emptyText}>
-              {selectedServiceTypeIds.length > 0 ? "Seçili filtrelere uygun işletme bulunamadı." : "Henüz yayınlanmış bir işletme bulunmuyor."}
+              {selectedServiceTypeIds.length > 0 ? "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀"}
             </Text>
           </View>
         }
@@ -283,125 +289,162 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { // FlatList'i sarmalamak için
+  container: { 
     flex: 1,
-    backgroundColor: '#f8f9fa',
-    paddingTop: 10, // Üst tarafta boşluk eklendi
+    backgroundColor: '#F4F7FC',
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F4F7FC',
   },
   errorText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: 'red',
+    marginTop: 15,
+    fontSize: 17,
+    color: '#D32F2F',
     textAlign: 'center',
+    lineHeight: 24,
   },
   emptyText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#555',
+    marginTop: 15,
+    fontSize: 17,
+    color: '#546E7A',
     textAlign: 'center',
+    lineHeight: 24,
   },
   listContainer: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 0,
     paddingBottom: 20,
-    // backgroundColor: '#f8f9fa', // container'a taşındı
+  },
+  headerOuterContainer: { 
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 15, 
+    paddingBottom: 8,
+    backgroundColor: '#F4F7FC',
+  },
+  gradientHeader: {
+    backgroundColor: '#F4F7FC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E3E9F3',
+    marginBottom: 5,
+    paddingBottom: 5,
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 20,
-    paddingHorizontal: 12,
+    marginVertical: 5,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2C3E50',
+    lineHeight: 28,
   },
   filterButton: {
-    borderColor: '#0066CC',
-    paddingHorizontal: 15,
+    borderColor: '#4E7AC7',
+    backgroundColor: '#EBF5FF',
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 25,
+    borderWidth: 1.5,
   },
   filterButtonTitle: {
-    color: '#0066CC',
-    marginLeft: 5,
+    color: '#4E7AC7',
+    marginLeft: 8,
+    fontWeight: '600',
+    fontSize: 15,
   },
   card: {
-    borderRadius: 12,
-    marginHorizontal: 8,
-    marginBottom: 16,
-    padding: 0, // Card içindeki padding'i sıfırlayıp kendimiz yöneteceğiz
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    borderRadius: 18,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 0, 
+    elevation: 4,
+    shadowColor: '#B0C4DE',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
     backgroundColor: '#FFFFFF',
+    borderLeftWidth: 4,
+    borderLeftColor: '#55A6F7',
   },
   cardImageContainer: {
     width: '100%',
-    height: 180,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    height: 200,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
   },
   cardImage: {
     width: '100%',
-    height: 180,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    height: 200,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
   },
   noImageContainer: {
     width: '100%',
-    height: 180,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    backgroundColor: '#e9ecef',
+    height: 200,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: '#E9F5FE',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  noImageText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#55A6F7',
+  },
+  cardContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+  },
   cardTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 12,
+    fontWeight: '700',
     marginBottom: 6,
-    marginHorizontal: 12,
-    color: '#333',
+    color: '#34495E',
+  },
+  cardDivider: {
+    marginVertical: 4,
+    backgroundColor: '#E5EEF7',
+    height: 1,
   },
   cardDescription: {
     fontSize: 14,
-    color: '#555',
-    marginBottom: 8,
-    marginHorizontal: 12,
+    color: '#7F8C8D',
+    marginBottom: 10,
     lineHeight: 20,
   },
-  addressContainer: { // Yeni stil
+  addressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 8,
+    backgroundColor: '#F4FAFF',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
   },
-  addressIcon: { // Yeni stil
-    marginRight: 4,
+  addressIcon: {
+    marginRight: 6,
   },
-  addressTextContent: { // Yeni stil (eski cardAddress'in metin kısmı için)
+  addressTextContent: {
     fontSize: 12,
-    color: '#777',
-    flexShrink: 1, // Uzun adreslerin taşmasını engellemek için
+    color: '#4E7AC7',
+    flexShrink: 1,
   },
   retryButton: {
     marginTop: 20,
-    backgroundColor: '#0066CC', // Yeni birincil mavi
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    backgroundColor: '#55A6F7',
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 25,
   },
   retryButtonText: {
     color: 'white',
@@ -416,49 +459,64 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: 'white',
-    borderRadius: 10,
+    borderRadius: 20,
     padding: 20,
     width: '90%',
     maxHeight: '80%',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 15,
+    marginBottom: 20,
     textAlign: 'center',
+    color: '#2C3E50',
   },
   modalScrollView: {
-    maxHeight: Dimensions.get('window').height * 0.5, // Ekran yüksekliğinin %50'si
+    maxHeight: Dimensions.get('window').height * 0.5, 
     marginBottom: 15,
   },
   checkboxContainerModal: {
     backgroundColor: 'transparent',
     borderWidth: 0,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginLeft: 0,
   },
   checkboxTextModal: {
     fontWeight: 'normal',
+    fontSize: 16,
+    color: '#34495E',
   },
   modalButtonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 10,
+    marginTop: 15,
   },
   modalButton: {
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 8,
-    minWidth: 120,
+    borderRadius: 20,
+    minWidth: 130,
+    borderWidth: 1.5,
   },
   modalButtonTextClear: {
-    color: '#007bff',
+    color: '#4E7AC7',
+    fontWeight: '600',
   },
   modalButtonApply: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#4E7AC7',
+    borderColor: '#4E7AC7',
   },
   modalButtonTextApply: {
     color: 'white',
+    fontWeight: '600',
   }
 });
 
