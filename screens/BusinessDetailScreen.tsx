@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions, Linking, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // useRef eklendi
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions, Linking, TouchableOpacity, Platform, Alert } from 'react-native'; // Alert eklendi
 import { Card, Icon } from '@rneui/themed';
 import MapView, { Marker } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
 import { RouteProp, useRoute } from '@react-navigation/native';
+import { Session } from '@supabase/supabase-js'; // Session import edildi
 
 // App.tsx'deki RootStackParamList'e göre güncellenecek
 type RootStackParamList = {
@@ -14,6 +15,7 @@ type RootStackParamList = {
 type BusinessDetailScreenRouteProp = RouteProp<RootStackParamList, 'BusinessDetail'>;
 
 interface BusinessFullDetails {
+  id: string; // id alanı eklendi
   owner_id: string;
   name: string;
   description: string | null;
@@ -37,9 +39,71 @@ const BusinessDetailScreen = () => {
   const [business, setBusiness] = useState<BusinessFullDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const hasLoggedForCurrentBusinessIdRef = useRef(false); // Tıklamanın bu businessId için loglanıp loglanmadığını takip eder
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, currentSession) => { 
+        setSession(currentSession);
+      }
+    );
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const logBusinessClick = async (currentBusinessId: string, currentUserId: string | undefined, businessOwnerId: string | undefined) => {
+    console.log('[BusinessDetailScreen] logBusinessClick called. BusinessID:', currentBusinessId);
+    console.log('[BusinessDetailScreen] currentUserId:', currentUserId);
+    console.log('[BusinessDetailScreen] businessOwnerId (from business data):', businessOwnerId);
+    console.log('[BusinessDetailScreen] hasLoggedForCurrentBusinessIdRef.current (at start):', hasLoggedForCurrentBusinessIdRef.current);
+
+    if (hasLoggedForCurrentBusinessIdRef.current) {
+      console.log('[BusinessDetailScreen] Click event already processed for this businessId instance (ref was true).');
+      return;
+    }
+
+    // Bu businessId için loglama işlemini başlatıyoruz, ref'i hemen true yapalım.
+    // Böylece bu fonksiyon asenkron işlemler sırasında tekrar çağrılırsa, mükerrer işlem yapılmaz.
+    hasLoggedForCurrentBusinessIdRef.current = true;
+    console.log('[BusinessDetailScreen] hasLoggedForCurrentBusinessIdRef.current set to true.');
+
+    if (currentUserId && businessOwnerId && currentUserId === businessOwnerId) {
+      console.log('[BusinessDetailScreen] Business owner viewed their own page. Click not logged.');
+      // Ref zaten true yapıldı, işlem tamamlandı.
+      return;
+    }
+
+    try {
+      const clickData: { business_id: string; user_id?: string } = {
+        business_id: currentBusinessId,
+      };
+      if (currentUserId) {
+        clickData.user_id = currentUserId;
+      }
+      console.log('[BusinessDetailScreen] Attempting to insert click log:', clickData);
+      const { error: clickError } = await supabase.from('businessclicks').insert(clickData);
+      
+      if (clickError) {
+        console.warn('[BusinessDetailScreen] Error logging business click - Details:', JSON.stringify(clickError, null, 2));
+        // Hata durumunda ref'i false yapmıyoruz ki sürekli denemesin.
+        // businessId değiştiğinde zaten sıfırlanacak.
+      } else {
+        console.log('[BusinessDetailScreen] Business click logged successfully for business_id:', currentBusinessId);
+      }
+    } catch (e: any) {
+      console.warn('[BusinessDetailScreen] Exception logging business click:', e);
+    }
+  };
+  
   const fetchBusinessDetails = useCallback(async () => {
-    if (!businessId) { // businessOwnerId -> businessId
+    if (!businessId) { 
       setError('İşletme kimliği bulunamadı.');
       setLoading(false);
       return;
@@ -61,24 +125,35 @@ const BusinessDetailScreen = () => {
           throw fetchError;
         }
       }
-      setBusiness(data);
+      setBusiness(data as BusinessFullDetails); 
+      if (data && !fetchError) {
+        logBusinessClick(businessId, session?.user?.id, data.owner_id);
+      }
     } catch (err) {
       if (err instanceof Error) {
         setError('İşletme detayları yüklenirken bir hata oluştu: ' + err.message);
-        console.error(err);
+        console.error("Error in fetchBusinessDetails:", err);
       } else {
         setError('Bilinmeyen bir hata oluştu.');
-        console.error(err);
+        console.error("Unknown error in fetchBusinessDetails:", err);
       }
       setBusiness(null);
     } finally {
       setLoading(false);
     }
-  }, [businessId]); // businessOwnerId -> businessId
+  }, [businessId, session]); // session bağımlılık olarak eklendi
 
+  // businessId her değiştiğinde, bu ID için tıklama logunu sıfırla
+  useEffect(() => {
+    console.log(`[BusinessDetailScreen] businessId changed to: ${businessId}. Resetting hasLoggedRef.`);
+    hasLoggedForCurrentBusinessIdRef.current = false;
+  }, [businessId]);
+
+  // fetchBusinessDetails'ı çağıran useEffect
   useEffect(() => {
     fetchBusinessDetails();
-  }, [fetchBusinessDetails]);
+  }, [fetchBusinessDetails]); // fetchBusinessDetails'ın bağımlılıkları [businessId, session]
+
 
   const openMapNavigation = () => {
     if (business && business.latitude && business.longitude) {

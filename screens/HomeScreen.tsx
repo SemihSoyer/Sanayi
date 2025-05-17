@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image as RNImage, Modal, ScrollView, Dimensions } from 'react-native'; // Modal, ScrollView, Dimensions eklendi
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image, Modal, ScrollView, Dimensions, StatusBar, SafeAreaView } from 'react-native'; // Image olarak değiştirildi, StatusBar ve SafeAreaView eklendi
 import { Card, Icon, Button, CheckBox } from '@rneui/themed'; // Button, CheckBox eklendi
 import { supabase } from '../lib/supabase';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -160,7 +160,7 @@ const HomeScreen = () => {
 
 
   const renderBusinessItem = ({ item }: { item: ListedBusiness }) => (
-    <TouchableOpacity onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}> {/* businessOwnerId -> businessId, item.owner_id -> item.id */}
+    <TouchableOpacity onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}> 
       <Card containerStyle={styles.card}>
         {item.photos && item.photos.length > 0 && item.photos[0] ? (
           <Card.Image source={{ uri: item.photos[0] }} style={styles.cardImage} resizeMode="cover" />
@@ -169,17 +169,19 @@ const HomeScreen = () => {
             <Icon name="image-off-outline" type="material-community" size={50} color="#ccc" />
           </View>
         )}
-        <Card.Title style={styles.cardTitle}>{item.name}</Card.Title>
-        <Card.Divider />
-        <Text style={styles.cardDescription} numberOfLines={2}>
-          {item.description || 'Açıklama bulunmuyor.'}
-        </Text>
-        {item.address && (
-          <View style={styles.addressContainer}>
-            <Icon name="location-pin" type="material" size={14} color="#555" style={styles.addressIcon} />
-            <Text style={styles.addressTextContent} numberOfLines={1}>{item.address}</Text>
-          </View>
-        )}
+        <View style={{paddingHorizontal: 12, paddingVertical: 10}}>
+          <Text style={styles.cardTitle}>{item.name || ''}</Text>
+          <Card.Divider />
+          <Text style={styles.cardDescription} numberOfLines={2}>
+            {item.description || 'Açıklama bulunmuyor.'}
+          </Text>
+          {item.address && (
+            <View style={styles.addressContainer}>
+              <Icon name="location-pin" type="material" size={14} color="#555" style={styles.addressIcon} />
+              <Text style={styles.addressTextContent} numberOfLines={1}>{item.address}</Text>
+            </View>
+          )}
+        </View>
       </Card>
     </TouchableOpacity>
   );
@@ -206,7 +208,8 @@ const HomeScreen = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
       <Modal
         animationType="slide"
         transparent={true}
@@ -230,8 +233,19 @@ const HomeScreen = () => {
               ))}
             </ScrollView>
             <View style={styles.modalButtonContainer}>
-              <Button title="Temizle" onPress={clearFilters} type="outline" buttonStyle={styles.modalButton} titleStyle={styles.modalButtonTextClear} />
-              <Button title="Uygula" onPress={applyFilters} buttonStyle={[styles.modalButton, styles.modalButtonApply]} titleStyle={styles.modalButtonTextApply} />
+              <Button 
+                title="Temizle"
+                onPress={clearFilters}
+                type="outline" 
+                buttonStyle={styles.modalButton} 
+                titleStyle={styles.modalButtonTextClear}
+              />
+              <Button 
+                title="Uygula"
+                onPress={applyFilters}
+                buttonStyle={[styles.modalButton, styles.modalButtonApply]} 
+                titleStyle={styles.modalButtonTextApply}
+              />
             </View>
           </View>
         </View>
@@ -241,13 +255,13 @@ const HomeScreen = () => {
         data={filteredBusinesses}
         renderItem={renderBusinessItem}
         keyExtractor={(item) => item.id} // PK olarak id kullanılıyor
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[styles.listContainer, {paddingTop: 10}]}
         ListHeaderComponent={
-          <View style={styles.headerContainer}>
+          <View style={[styles.headerContainer, {marginTop: 40}]}>
             <Text style={styles.headerTitle}>Keşfet</Text>
             <Button 
               icon={<Icon name="filter" type="ionicon" color="#0066CC" size={20} />} 
-              title="Filtrele" 
+              title="Filtrele"
               type="outline" 
               onPress={() => setFilterModalVisible(true)} 
               buttonStyle={styles.filterButton}
@@ -264,7 +278,7 @@ const HomeScreen = () => {
           </View>
         }
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -272,6 +286,7 @@ const styles = StyleSheet.create({
   container: { // FlatList'i sarmalamak için
     flex: 1,
     backgroundColor: '#f8f9fa',
+    paddingTop: 10, // Üst tarafta boşluk eklendi
   },
   centered: {
     flex: 1,
@@ -329,6 +344,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  cardImageContainer: {
+    width: '100%',
+    height: 180,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   cardImage: {
     width: '100%',

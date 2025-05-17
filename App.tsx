@@ -42,10 +42,51 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
   const { session, userProfile } = route.params;
   if (userProfile?.role === 'business_owner') {
     return (
-      <Tab.Navigator>
-        <Tab.Screen name="İşletme Paneli" component={BusinessDashboardScreen} />
-        <Tab.Screen name="İşyerim" component={MyBusinessScreen} />
-        <Tab.Screen name="Profil">
+      <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#0066CC' }}>
+        <Tab.Screen 
+          name="İşletme Paneli" 
+          component={BusinessDashboardScreen} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Icon 
+                name="view-dashboard" 
+                type="material-community" 
+                color={color} 
+                size={size} 
+              />
+            ),
+            headerShown: false
+          }}
+        />
+        <Tab.Screen 
+          name="İşyerim" 
+          component={MyBusinessScreen} 
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Icon 
+                name="store" 
+                type="material-community" 
+                color={color} 
+                size={size} 
+              />
+            ),
+            headerShown: false
+          }}
+        />
+        <Tab.Screen 
+          name="Profil"
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Icon 
+                name="account" 
+                type="material-community" 
+                color={color} 
+                size={size} 
+              />
+            ),
+            headerShown: false
+          }}
+        >
           {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
         </Tab.Screen>
       </Tab.Navigator>
@@ -60,8 +101,14 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
         component={HomeScreen} 
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Icon name="home" type="material-community" color={color} size={size} />
+            <Icon 
+              name="home" 
+              type="material-community" 
+              color={color} 
+              size={size} 
+            />
           ),
+          headerShown: false
         }}
       />
       <Tab.Screen 
@@ -69,16 +116,28 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
         component={MapScreen} 
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Icon name="map-marker" type="material-community" color={color} size={size} />
+            <Icon 
+              name="map-marker" 
+              type="material-community" 
+              color={color} 
+              size={size} 
+            />
           ),
+          headerShown: false
         }}
       />
       <Tab.Screen 
         name="Profil" 
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Icon name="account" type="material-community" color={color} size={size} />
+            <Icon 
+              name="account" 
+              type="material-community" 
+              color={color} 
+              size={size} 
+            />
           ),
+          headerShown: false
         }}
       >
         {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
