@@ -304,14 +304,14 @@ const BusinessDetailScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f2f5', // Airbnb benzeri açık gri arka plan
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
   loadingText: {
     marginTop: 10,

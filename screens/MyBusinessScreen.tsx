@@ -779,9 +779,18 @@ const MyBusinessScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f2f5' },
+  container: {
+    flexGrow: 1,
+    padding: 20,
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+  },
   contentContainer: { padding: 20, paddingBottom: 40 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f2f5' },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+  },
   header: { textAlign: 'center', marginBottom: 25, color: '#333', fontWeight: 'bold' },
   inputContainer: { backgroundColor: '#fff', borderRadius: 8, borderWidth:1, borderColor: '#ddd', paddingHorizontal:10, marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#333', marginTop: 20, marginBottom: 10 }, 

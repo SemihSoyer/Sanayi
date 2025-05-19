@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image, Modal, ScrollView, Dimensions, StatusBar, SafeAreaView, Platform } from 'react-native'; // Image olarak değiştirildi, StatusBar ve SafeAreaView eklendi
 import { Card, Icon, Button, CheckBox } from '@rneui/themed'; // Button, CheckBox eklendi
 import { supabase } from '../lib/supabase';
@@ -49,6 +49,9 @@ const HomeScreen = () => {
   const [loadingCities, setLoadingCities] = useState(true); // Şehir yükleme durumu eklendi
   const [error, setError] = useState<string | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [animatedHeaderText, setAnimatedHeaderText] = useState('');
+  const fullHeaderText = "Yakındaki Tamirciler";
+  const headerAnimationTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout referansını tutmak için
 
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
@@ -129,6 +132,32 @@ const HomeScreen = () => {
       fetchData();
     }, [fetchData])
   );
+
+  useEffect(() => {
+    let currentIndex = 0;
+    setAnimatedHeaderText(''); // Her odaklanmada animasyonu sıfırla
+
+    const animateHeader = () => {
+      if (currentIndex < fullHeaderText.length) {
+        setAnimatedHeaderText((prev) => prev + fullHeaderText[currentIndex]);
+        currentIndex++;
+        headerAnimationTimeoutRef.current = setTimeout(animateHeader, 150); // Yazma hızı (ms)
+      } else {
+        // İsteğe bağlı: Tamamlandıktan sonra bir süre bekleyip tekrar başlatabiliriz.
+        // Şimdilik burada duruyor.
+      }
+    };
+
+    // Animasyonu hemen başlat
+    animateHeader();
+
+    return () => {
+      // Component unmount olduğunda veya useEffect tekrar çalıştığında timeout'u temizle
+      if (headerAnimationTimeoutRef.current) {
+        clearTimeout(headerAnimationTimeoutRef.current);
+      }
+    };
+  }, []); // Şimdilik sadece mount olduğunda çalışsın, useFocusEffect ile de tetiklenebilir
 
   const applyFilters = async () => {
     setFilterModalVisible(false);
@@ -217,6 +246,19 @@ const HomeScreen = () => {
         </View>
       </Card>
     </TouchableOpacity>
+  );
+
+  const renderListHeader = () => (
+    <View style={styles.headerOuterContainer}>
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitleText}>Yakındaki Tamirciler</Text>
+        <Button
+          type="clear"
+          icon={<Icon name="filter-outline" type="ionicon" color="#007AFF" size={20} />}
+          onPress={() => setFilterModalVisible(true)}
+        />
+      </View>
+    </View>
   );
 
   if (loadingBusinesses || loadingServiceTypes) {
@@ -316,24 +358,8 @@ const HomeScreen = () => {
         data={filteredBusinesses}
         renderItem={renderBusinessItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContainer, {paddingTop: 10}]}
-        ListHeaderComponent={
-          <View style={styles.headerOuterContainer}>
-            <View style={styles.gradientHeader}>
-              <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>Merhaba!</Text>
-                <Button 
-                  icon={<Icon name="filter-variant" type="material-community" color="#0066CC" size={22} />} 
-                  title={`Filtrele${selectedCityId || selectedServiceTypeIds.length > 0 ? ' (*)' : ''}`}
-                  type="outline" 
-                  onPress={() => setFilterModalVisible(true)} 
-                  buttonStyle={styles.filterButton}
-                  titleStyle={styles.filterButtonTitle}
-                />
-              </View>
-            </View>
-          </View>
-        }
+        contentContainerStyle={[styles.listContainer, {paddingTop: 10}] }
+        ListHeaderComponent={renderListHeader}
         ListEmptyComponent={
           <View style={styles.centered}>
             <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
@@ -350,9 +376,9 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
-    backgroundColor: '#F4F7FC',
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
   centered: {
     flex: 1,
@@ -381,40 +407,30 @@ const styles = StyleSheet.create({
   },
   headerOuterContainer: { 
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 15, 
-    paddingBottom: 8,
-    backgroundColor: '#F4F7FC',
-  },
-  gradientHeader: {
-    backgroundColor: '#F4F7FC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E3E9F3',
-    marginBottom: 5,
-    paddingBottom: 5,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 20, 
+    paddingBottom: 12, 
+    backgroundColor: '#E0F7FA', 
   },
   headerContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 5,
+    justifyContent: 'space-between', // Metin sola, buton sağa
+    marginBottom: 10,
   },
-  headerTitle: {
-    fontSize: 22,
+  headerTitleText: { // Yeni stil
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#2C3E50',
-    lineHeight: 28,
   },
   filterButton: {
-    borderColor: '#4E7AC7',
-    backgroundColor: '#EBF5FF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 25,
-    borderWidth: 1.5,
+    backgroundColor: 'rgba(0, 122, 255, 0.08)', 
+    paddingHorizontal: 14, 
+    paddingVertical: 10, 
+    borderRadius: 20, 
   },
   filterButtonTitle: {
-    color: '#4E7AC7',
-    marginLeft: 8,
+    color: '#007AFF', 
+    marginLeft: 6, 
     fontWeight: '600',
     fontSize: 15,
   },

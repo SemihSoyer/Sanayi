@@ -241,13 +241,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f0f2f5', // Diğer ekranlarla uyumlu açık gri
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f2f5', // Diğer ekranlarla uyumlu açık gri
+    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
   avatarContainer: {
     alignItems: 'center',

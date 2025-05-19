@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#E0F7FA',
   },
   informativeText: {
     textAlign: 'center',
