@@ -1,170 +1,78 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Platform } from 'react-native'; // Modal, ScrollView, Platform eklendi
-import { Button, CheckBox, Icon } from '@rneui/themed'; // CheckBox, Icon eklendi (Button zaten vardı)
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Platform, TouchableOpacity } from 'react-native';
+import { Button, CheckBox, Icon } from '@rneui/themed';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-// Icon zaten import edilmişti, tekrar eklemeye gerek yok.
+import { useMapScreenData, MapBusiness } from '../hooks/useMapScreenData';
+import MapBusinessPreviewCard, { PreviewBusiness } from '../components/MapBusinessPreviewCard';
 
 // App.tsx'deki RootStackParamList'e göre güncellenecek
-// BusinessDetailScreen'e yönlendirme için tip tanımı
 type RootStackParamList = {
-  BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
-  // Diğer ekranlarınız...
+  BusinessDetail: { businessId: string };
 };
 type MapScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BusinessDetail'>;
 
-interface MapBusiness {
-  id: string; // İşletmenin benzersiz ID'si eklendi
-  owner_id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-}
-
-interface ServiceType { // HomeScreen'deki ile aynı
+interface ServiceType {
   id: string;
   name: string;
   icon_url?: string;
 }
 
 const MapScreen = () => {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [allMapBusinesses, setAllMapBusinesses] = useState<MapBusiness[]>([]);
-  const [filteredMapBusinesses, setFilteredMapBusinesses] = useState<MapBusiness[]>([]);
-  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
-  const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<string[]>([]);
-
-  const [loadingLocation, setLoadingLocation] = useState(true);
-  const [loadingData, setLoadingData] = useState(true); // Genel veri yükleme (işletme ve hizmet türleri)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
-
   const navigation = useNavigation<MapScreenNavigationProp>();
+  const {
+    location,
+    filteredMapBusinesses,
+    serviceTypes,
+    selectedServiceTypeIds,
+    loadingLocation,
+    loadingData,
+    errorMsg,
+    filterModalVisible,
+    fetchData,
+    setFilterModalVisible,
+    handleServiceTypeToggle,
+    triggerApplyFilters,
+    clearMapFilters,
+  } = useMapScreenData();
 
-  const fetchData = useCallback(async () => {
-    setLoadingLocation(true);
-    setLoadingData(true);
-    setErrorMsg(null);
-
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Konum izni reddedildi. Harita özelliği kullanılamıyor.');
-        setLoadingLocation(false);
-        setLoadingData(false);
-        return;
-      }
-      let currentLocation = await Location.getCurrentPositionAsync({});
-      setLocation(currentLocation);
-      setLoadingLocation(false);
-
-      // Hizmet türlerini çek
-      const { data: serviceTypesData, error: serviceTypesError } = await supabase
-        .from('ServiceTypes')
-        .select('id, name, icon_url');
-      if (serviceTypesError) throw serviceTypesError;
-      setServiceTypes(serviceTypesData || []);
-
-      // Yayınlanmış ve konumu olan tüm işletmeleri çek
-      // RPC kullanacağız, bu yüzden başlangıçta tümünü çekmeye gerek yok, RPC'den gelecek.
-      // Ancak RPC yoksa veya ilk yüklemede tümünü göstermek için bu kalabilir.
-      // Şimdilik RPC'ye güvenerek bu kısmı RPC çağrısına bırakalım ve applyFilters ile ilk yüklemeyi yapalım.
-      // Ya da başlangıçta RPC'yi boş filtre ile çağırabiliriz.
-      await applyMapFilters(true); // true: initial load
-
-    } catch (err) {
-      if (err instanceof Error) {
-        setErrorMsg('Veriler yüklenirken bir hata oluştu: ' + err.message);
-        console.error("FetchData Error:", err);
-      } else {
-        setErrorMsg('Bilinmeyen bir hata oluştu.');
-        console.error("FetchData Error (unknown):", err);
-      }
-      setLocation(null);
-      setAllMapBusinesses([]);
-      setFilteredMapBusinesses([]);
-      setServiceTypes([]);
-    } finally {
-      setLoadingLocation(false); // Bu zaten yukarıda yapılıyor
-      setLoadingData(false);
-    }
-  }, []); // applyMapFilters'ı bağımlılıklara ekleyeceğiz
+  const [selectedBusiness, setSelectedBusiness] = useState<MapBusiness | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       fetchData();
+      // Ekran odağını kaybettiğinde önizlemeyi kapat
+      return () => {
+        setSelectedBusiness(null);
+      };
     }, [fetchData])
   );
+
+  const handleMarkerPress = (business: MapBusiness) => {
+    setSelectedBusiness(business);
+  };
+
+  const handlePreviewCardPress = (businessId: string) => {
+    setSelectedBusiness(null); // Detay sayfasına gitmeden önce önizlemeyi kapat
+    navigation.navigate('BusinessDetail', { businessId });
+  };
+
+  const handleClosePreview = () => {
+    setSelectedBusiness(null);
+  };
   
-  const applyMapFilters = useCallback(async (isInitialLoad = false) => {
-    if (!isInitialLoad) {
-      setFilterModalVisible(false);
+  const handleMapPress = () => {
+    // Eğer kullanıcı haritanın herhangi bir yerine tıklarsa ve bir marker değilse,
+    // açık olan önizleme kartını kapat.
+    if (selectedBusiness) {
+      setSelectedBusiness(null);
     }
-    setLoadingData(true); // İşletmeler yükleniyor
-    setErrorMsg(null);
-
-    try {
-      const rpcParams = { 
-        p_service_type_ids: selectedServiceTypeIds.length > 0 ? selectedServiceTypeIds : null 
-      };
-      // RPC fonksiyon adını 'get_businesses_by_service_types' olarak değiştiriyoruz.
-      console.log("[MapScreen] Calling RPC 'get_businesses_by_service_types' with params:", rpcParams);
-      const { data, error } = await supabase.rpc('get_businesses_by_service_types', rpcParams);
-
-      if (error) {
-        console.error("[MapScreen] RPC Error:", error);
-        throw error;
-      }
-      console.log("[MapScreen] RPC Data:", data);
-      const businessesWithLocation = (data || []).filter((b: any) => b.latitude != null && b.longitude != null) as MapBusiness[]; // 'b' parametresine any tipi eklendi (veya daha spesifik bir tip)
-      
-      if (isInitialLoad) {
-        setAllMapBusinesses(businessesWithLocation);
-      }
-      setFilteredMapBusinesses(businessesWithLocation);
-
-    } catch (err) {
-      if (err instanceof Error) {
-        setErrorMsg('Filtreleme sırasında bir hata oluştu: ' + err.message);
-        console.error("[MapScreen] ApplyFilters Error:", err);
-      } else {
-        setErrorMsg('Filtreleme sırasında bilinmeyen bir hata oluştu.');
-        console.error("[MapScreen] ApplyFilters Error (unknown):", err);
-      }
-      setFilteredMapBusinesses([]);
-    } finally {
-      setLoadingData(false);
-    }
-  }, [selectedServiceTypeIds]); // allMapBusinesses'a gerek yok çünkü RPC'den çekiyoruz
-
-  useEffect(() => {
-    // fetchData'dan sonra applyMapFilters çağrıldığı için bu useEffect'e gerek kalmayabilir,
-    // ya da sadece selectedServiceTypeIds değiştiğinde çağrılabilir.
-    // Şimdilik fetchData içinde ilk yükleme yapılıyor.
-    // Eğer filtreler modal dışından da değişebilirse (örn. global state), o zaman bu useEffect anlamlı olur.
-    // Mevcut yapıda, modal kapandığında applyMapFilters çağrılıyor.
-  }, [selectedServiceTypeIds, allMapBusinesses, applyMapFilters]);
-
-
-  const clearMapFilters = () => {
-    setSelectedServiceTypeIds([]);
-    // setFilteredMapBusinesses(allMapBusinesses); // RPC kullandığımız için tekrar RPC çağıracağız
-    applyMapFilters(); // Boş filtrelerle RPC'yi çağır
-    setFilterModalVisible(false);
   };
 
-  const handleServiceTypeToggle = (serviceTypeId: string) => {
-    setSelectedServiceTypeIds(prev => 
-      prev.includes(serviceTypeId) 
-        ? prev.filter(id => id !== serviceTypeId) 
-        : [...prev, serviceTypeId]
-    );
-  };
-
-  if (loadingLocation || (loadingData && !location)) { // Konum yüklenene kadar veya konum yokken veri yükleniyorsa
+  if (loadingLocation || (loadingData && !location && !errorMsg)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#0066CC" />
@@ -189,6 +97,7 @@ const MapScreen = () => {
      return (
       <View style={styles.centered}>
         <Text>Konum bilgisi alınamadı. Lütfen konum servislerinizi kontrol edin.</Text>
+        <Button title="Tekrar Dene" onPress={fetchData} />
       </View>
     );
   }
@@ -204,8 +113,7 @@ const MapScreen = () => {
           longitudeDelta: 0.0421,
         }}
         showsUserLocation={true}
-        // key prop'u MapView'ın yeniden render olmasını tetikleyebilir, dikkatli kullanılmalı.
-        // key={filteredMapBusinesses.map(b => b.id).join('-')} 
+        onPress={handleMapPress} // Haritaya tıklanınca önizlemeyi kapat
       >
         {filteredMapBusinesses.map((business) => (
           <Marker
@@ -214,12 +122,26 @@ const MapScreen = () => {
               latitude: business.latitude,
               longitude: business.longitude,
             }}
-            title={business.name}
-            onCalloutPress={() => navigation.navigate('BusinessDetail', { businessId: business.id })}
-            pinColor="red"
+            onPress={() => handleMarkerPress(business)} 
+            pinColor={selectedBusiness?.id === business.id ? "#0066CC" : "red"} 
           />
         ))}
       </MapView>
+
+      {selectedBusiness && (
+        <View style={styles.previewContainer}>
+          <MapBusinessPreviewCard
+            business={{
+              id: selectedBusiness.id,
+              name: selectedBusiness.name,
+              address: selectedBusiness.address,
+              photos: selectedBusiness.photos,
+            }}
+            onPress={() => handlePreviewCardPress(selectedBusiness.id)}
+            onClose={handleClosePreview}
+          />
+        </View>
+      )}
 
       <View style={styles.filterButtonContainer}>
         <Button 
@@ -228,10 +150,11 @@ const MapScreen = () => {
           onPress={() => setFilterModalVisible(true)} 
           buttonStyle={styles.filterButton}
           titleStyle={styles.filterButtonTitle}
+          disabled={loadingData} // Veri yüklenirken butonu devre dışı bırak
         />
       </View>
       
-      {loadingData && !loadingLocation && ( // Sadece işletmeler yükleniyorsa ve konum alındıysa
+      {(loadingData && !loadingLocation) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="small" color="#fff" />
           <Text style={styles.loadingText}>İşletmeler yükleniyor...</Text>
@@ -244,153 +167,172 @@ const MapScreen = () => {
         visible={filterModalVisible}
         onRequestClose={() => setFilterModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <TouchableOpacity 
+            style={styles.modalOverlay} 
+            activeOpacity={1} 
+            onPressOut={() => setFilterModalVisible(false)} // Dışına tıklayınca kapat
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalContent} onPress={() => {}}> 
             <Text style={styles.modalTitle}>Hizmet Türüne Göre Filtrele</Text>
             <ScrollView style={styles.modalScrollView}>
-              {serviceTypes.length === 0 && !loadingData ? (
-                <Text style={styles.centeredText}>Filtrelenecek hizmet türü bulunamadı.</Text>
-              ) : (
-                serviceTypes.map((service) => (
-                  <CheckBox
-                    key={service.id}
-                    title={service.name}
-                    checked={selectedServiceTypeIds.includes(service.id)}
-                    onPress={() => handleServiceTypeToggle(service.id)}
-                    containerStyle={styles.checkboxContainerModal}
-                    textStyle={styles.checkboxTextModal}
-                    checkedColor="#007bff"
-                  />
-                ))
+              {serviceTypes.length === 0 && !loadingData && (
+                <Text style={styles.noServiceText}>Filtrelenecek hizmet türü bulunamadı.</Text>
               )}
+              {serviceTypes.map((type) => (
+                <CheckBox
+                  key={type.id}
+                  title={type.name}
+                  checked={selectedServiceTypeIds.includes(type.id)}
+                  onPress={() => handleServiceTypeToggle(type.id)}
+                  containerStyle={styles.checkboxContainer}
+                  textStyle={styles.checkboxText}
+                  checkedColor="#0066CC"
+                />
+              ))}
             </ScrollView>
             <View style={styles.modalButtonContainer}>
-              <Button title="Temizle" onPress={clearMapFilters} type="outline" buttonStyle={styles.modalButton} titleStyle={styles.modalButtonTextClear} />
-              <Button title="Uygula" onPress={() => applyMapFilters()} buttonStyle={[styles.modalButton, styles.modalButtonApply]} titleStyle={styles.modalButtonTextApply} />
+              <Button title="Temizle" onPress={clearMapFilters} type="outline" buttonStyle={styles.modalClearButton} titleStyle={styles.modalClearButtonTitle}/>
+              <Button title="Uygula" onPress={triggerApplyFilters} buttonStyle={styles.modalApplyButton} />
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  // HomeScreen'den kopyalanan ve MapScreen'e uyarlanan stiller
   container: {
     flex: 1,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f8f9fa', // Arka plan rengi eklendi
+    backgroundColor: '#f8f9fa',
   },
   errorText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: 'red',
     textAlign: 'center',
+    fontSize: 16,
+    color: '#D32F2F',
+    marginTop: 10,
     marginBottom: 15,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 70, // Filtre butonunun altına gelecek şekilde ayarlandı
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 10, // Haritanın üzerinde olması için
-  },
-  loadingText: {
-    color: '#fff',
-    marginLeft: 10,
-    fontSize: 14,
   },
   filterButtonContainer: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 20,
     right: 15,
-    zIndex: 10,
+    zIndex: 10, // Diğer elemanların üzerinde olması için
   },
   filterButton: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderColor: '#0066CC',
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    backgroundColor: '#0066CC',
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+    elevation: 3,
   },
   filterButtonTitle: {
-    color: '#0066CC',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
     marginLeft: 5,
-    fontSize: 14,
   },
+  loadingOverlay: {
+    position: 'absolute',
+    bottom: 20,
+    left: Dimensions.get('window').width / 2 - 100, // Ortalamak için
+    width: 200,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20, // Önizleme kartının da üzerinde olabilir
+  },
+  loadingText: {
+    color: '#fff',
+    marginLeft: 10,
+  },
+  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end', // Modalı alta al
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalContent: {
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    width: '90%',
-    maxHeight: '80%',
+    padding: 22,
+    borderTopRightRadius: 17,
+    borderTopLeftRadius: 17,
+    maxHeight: Dimensions.get('window').height * 0.6, // Ekranın %60'ı kadar
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 15,
     textAlign: 'center',
+    color: '#333',
   },
   modalScrollView: {
-    maxHeight: Dimensions.get('window').height * 0.5,
-    marginBottom: 15,
+    // maxHeight: Dimensions.get('window').height * 0.4, // İçeriğe göre ayarlanabilir
   },
-  checkboxContainerModal: {
+  checkboxContainer: {
     backgroundColor: 'transparent',
     borderWidth: 0,
-    paddingVertical: 8,
-    marginLeft: 0,
+    padding: 0,
+    marginLeft: 0, // CheckBox'ın kendi sol padding'ini sıfırla
+    marginRight:0,
+    marginVertical: 8,
   },
-  checkboxTextModal: {
+  checkboxText: {
     fontWeight: 'normal',
+    color: '#444',
   },
   modalButtonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 10,
+    marginTop: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee'
   },
-  modalButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+  modalApplyButton: {
+    backgroundColor: '#0066CC',
+    paddingHorizontal: 30,
     borderRadius: 8,
-    minWidth: 120,
   },
-  modalButtonTextClear: {
-    color: '#007bff',
+  modalClearButton: {
+    borderColor: '#0066CC',
+    paddingHorizontal: 30,
+    borderRadius: 8,
   },
-  modalButtonApply: {
-    backgroundColor: '#007bff',
+  modalClearButtonTitle: {
+    color: '#0066CC',
   },
-  modalButtonTextApply: {
-    color: 'white',
-  },
-  centeredText: {
+  noServiceText: {
     textAlign: 'center',
+    color: '#777',
     marginVertical: 20,
-    fontSize: 16,
-    color: '#666',
-  }
+  },
+  // Preview Card Styles
+  previewContainer: {
+    position: 'absolute',
+    bottom: 20, // Ekranın altından biraz yukarıda
+    left: 0,
+    right: 0,
+    alignItems: 'center', // Kartı yatayda ortala
+    zIndex: 15, // Filtre butonundan altta, yükleme overlay'inden üstte olabilir
+  },
 });
 
 export default MapScreen;
