@@ -44,7 +44,6 @@ const MapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-      // Ekran odağını kaybettiğinde önizlemeyi kapat
       return () => {
         setSelectedBusiness(null);
       };
@@ -56,7 +55,7 @@ const MapScreen = () => {
   };
 
   const handlePreviewCardPress = (businessId: string) => {
-    setSelectedBusiness(null); // Detay sayfasına gitmeden önce önizlemeyi kapat
+    setSelectedBusiness(null); 
     navigation.navigate('BusinessDetail', { businessId });
   };
 
@@ -65,39 +64,47 @@ const MapScreen = () => {
   };
   
   const handleMapPress = () => {
-    // Eğer kullanıcı haritanın herhangi bir yerine tıklarsa ve bir marker değilse,
-    // açık olan önizleme kartını kapat.
     if (selectedBusiness) {
       setSelectedBusiness(null);
     }
   };
 
-  if (loadingLocation || (loadingData && !location && !errorMsg)) {
+  if (loadingLocation) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#0066CC" />
-        <Text>{loadingLocation ? "Konumunuz alınıyor..." : "Veriler yükleniyor..."}</Text>
+        <Text style={styles.informativeText}>Konumunuz alınıyor...</Text>
       </View>
     );
   }
 
-  if (errorMsg) {
+  if (errorMsg) { 
     return (
       <View style={styles.centered}>
         <Icon name="alert-circle-outline" type="ionicon" size={50} color="orange" />
         <Text style={styles.errorText}>{errorMsg}</Text>
         {errorMsg !== 'Konum izni reddedildi. Harita özelliği kullanılamıyor.' && (
-           <Button title="Tekrar Dene" onPress={fetchData} />
+           <Button title="Tekrar Dene" onPress={fetchData} buttonStyle={styles.retryButton} titleStyle={styles.retryButtonText}/>
         )}
       </View>
     );
   }
 
-  if (!location) {
+  if (!location) { 
      return (
       <View style={styles.centered}>
-        <Text>Konum bilgisi alınamadı. Lütfen konum servislerinizi kontrol edin.</Text>
-        <Button title="Tekrar Dene" onPress={fetchData} />
+        <Icon name="compass-off-outline" type="material-community" size={50} color="#777" />
+        <Text style={styles.informativeText}>Konum bilgisi alınamadı. Lütfen konum servislerinizi kontrol edin veya tekrar deneyin.</Text>
+        <Button title="Tekrar Dene" onPress={fetchData} buttonStyle={styles.retryButton} titleStyle={styles.retryButtonText}/>
+      </View>
+    );
+  }
+
+  if (loadingData) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#0066CC" />
+        <Text style={styles.informativeText}>İşletmeler yükleniyor...</Text>
       </View>
     );
   }
@@ -113,7 +120,7 @@ const MapScreen = () => {
           longitudeDelta: 0.0421,
         }}
         showsUserLocation={true}
-        onPress={handleMapPress} // Haritaya tıklanınca önizlemeyi kapat
+        onPress={handleMapPress}
       >
         {filteredMapBusinesses.map((business) => (
           <Marker
@@ -150,17 +157,10 @@ const MapScreen = () => {
           onPress={() => setFilterModalVisible(true)} 
           buttonStyle={styles.filterButton}
           titleStyle={styles.filterButtonTitle}
-          disabled={loadingData} // Veri yüklenirken butonu devre dışı bırak
+          disabled={loadingData || loadingLocation}
         />
       </View>
       
-      {(loadingData && !loadingLocation) && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#fff" />
-          <Text style={styles.loadingText}>İşletmeler yükleniyor...</Text>
-        </View>
-      )}
-
       <Modal
         animationType="slide"
         transparent={true}
@@ -170,7 +170,7 @@ const MapScreen = () => {
         <TouchableOpacity 
             style={styles.modalOverlay} 
             activeOpacity={1} 
-            onPressOut={() => setFilterModalVisible(false)} // Dışına tıklayınca kapat
+            onPressOut={() => setFilterModalVisible(false)}
         >
           <TouchableOpacity activeOpacity={1} style={styles.modalContent} onPress={() => {}}> 
             <Text style={styles.modalTitle}>Hizmet Türüne Göre Filtrele</Text>
@@ -215,6 +215,12 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f8f9fa',
   },
+  informativeText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#333',
+    marginTop: 15,
+  },
   errorText: {
     textAlign: 'center',
     fontSize: 16,
@@ -222,11 +228,23 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 15,
   },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#0066CC',
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   filterButtonContainer: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 20,
     right: 15,
-    zIndex: 10, // Diğer elemanların üzerinde olması için
+    zIndex: 10,
   },
   filterButton: {
     backgroundColor: '#0066CC',
@@ -246,27 +264,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 5,
   },
-  loadingOverlay: {
-    position: 'absolute',
-    bottom: 20,
-    left: Dimensions.get('window').width / 2 - 100, // Ortalamak için
-    width: 200,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 10,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20, // Önizleme kartının da üzerinde olabilir
-  },
-  loadingText: {
-    color: '#fff',
-    marginLeft: 10,
-  },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end', // Modalı alta al
+    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalContent: {
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
     padding: 22,
     borderTopRightRadius: 17,
     borderTopLeftRadius: 17,
-    maxHeight: Dimensions.get('window').height * 0.6, // Ekranın %60'ı kadar
+    maxHeight: Dimensions.get('window').height * 0.6,
   },
   modalTitle: {
     fontSize: 20,
@@ -284,13 +284,12 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   modalScrollView: {
-    // maxHeight: Dimensions.get('window').height * 0.4, // İçeriğe göre ayarlanabilir
   },
   checkboxContainer: {
     backgroundColor: 'transparent',
     borderWidth: 0,
     padding: 0,
-    marginLeft: 0, // CheckBox'ın kendi sol padding'ini sıfırla
+    marginLeft: 0,
     marginRight:0,
     marginVertical: 8,
   },
@@ -324,14 +323,13 @@ const styles = StyleSheet.create({
     color: '#777',
     marginVertical: 20,
   },
-  // Preview Card Styles
   previewContainer: {
     position: 'absolute',
-    bottom: 20, // Ekranın altından biraz yukarıda
+    bottom: 20,
     left: 0,
     right: 0,
-    alignItems: 'center', // Kartı yatayda ortala
-    zIndex: 15, // Filtre butonundan altta, yükleme overlay'inden üstte olabilir
+    alignItems: 'center',
+    zIndex: 15,
   },
 });
 

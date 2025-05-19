@@ -37,54 +37,70 @@ interface UserProfile {
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator<RootStackParamList>(); // Stack navigator'ı tiple
 
-// AppTabs şimdi userProfile bilgisini de alabilir
+// Yeni screenOptions
+const commonScreenOptions = {
+  tabBarActiveTintColor: '#007AFF', // Canlı mavi
+  tabBarInactiveTintColor: '#8E8E93', // Soluk gri
+  tabBarStyle: {
+    backgroundColor: '#FFFFFF', // Beyaz arka plan
+    borderTopColor: '#E0E0E0', // Hafif bir üst çizgi
+    borderTopWidth: 0.5,
+    // height: 60, // Gerekirse yükseklik ayarlanabilir
+    // paddingBottom: 5, // iOS'ta safe area için gerekirse
+  },
+  tabBarShowLabel: true, // Etiketler görünsün
+  tabBarLabelStyle: {
+    fontSize: 10,
+    fontWeight: '500' as '500', // fontWeight için tip zorlaması
+  },
+  headerShown: false,
+};
+
 function AppTabs({ route }: { route: { params: { session: Session; userProfile: UserProfile | null } } }) {
   const { session, userProfile } = route.params;
+
+  // İkonlar için ortak stil ve animasyon mantığı
+  const getTabBarIcon = (routeName: string, focused: boolean, color: string, size: number) => {
+    let iconName = '';
+    const iconSize = focused ? size * 1.15 : size; // Aktif ikon biraz daha büyük
+    const iconColor = focused ? commonScreenOptions.tabBarActiveTintColor : commonScreenOptions.tabBarInactiveTintColor;
+
+    if (routeName === 'İşletme Paneli') {
+      iconName = 'view-dashboard';
+    } else if (routeName === 'İşyerim') {
+      iconName = 'store';
+    } else if (routeName === 'Profil') {
+      iconName = 'account-circle'; // Daha dolgun bir profil ikonu
+    } else if (routeName === 'Ana Sayfa') {
+      iconName = 'home-variant'; // Farklı bir ana sayfa ikonu
+    } else if (routeName === 'Harita') {
+      iconName = 'map-marker-radius'; // Farklı bir harita ikonu
+    }
+
+    return <Icon name={iconName} type="material-community" color={iconColor} size={iconSize} />;
+  };
+
   if (userProfile?.role === 'business_owner') {
     return (
-      <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#0066CC' }}>
+      <Tab.Navigator screenOptions={commonScreenOptions}>
         <Tab.Screen 
           name="İşletme Paneli" 
           component={BusinessDashboardScreen} 
           options={{
-            tabBarIcon: ({ color, size }) => (
-              <Icon 
-                name="view-dashboard" 
-                type="material-community" 
-                color={color} 
-                size={size} 
-              />
-            ),
-            headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("İşletme Paneli", focused, color, size),
           }}
         />
         <Tab.Screen 
           name="İşyerim" 
           component={MyBusinessScreen} 
           options={{
-            tabBarIcon: ({ color, size }) => (
-              <Icon 
-                name="store" 
-                type="material-community" 
-                color={color} 
-                size={size} 
-              />
-            ),
-            headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("İşyerim", focused, color, size),
           }}
         />
         <Tab.Screen 
           name="Profil"
           options={{
-            tabBarIcon: ({ color, size }) => (
-              <Icon 
-                name="account" 
-                type="material-community" 
-                color={color} 
-                size={size} 
-              />
-            ),
-            headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Profil", focused, color, size),
           }}
         >
           {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
@@ -93,51 +109,26 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
     );
   }
 
-  // Varsayılan olarak veya rol 'customer' ise müşteri sekmelerini göster
   return (
-    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#0066CC' }}>
+    <Tab.Navigator screenOptions={commonScreenOptions}>
       <Tab.Screen 
         name="Ana Sayfa" 
         component={HomeScreen} 
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Icon 
-              name="home" 
-              type="material-community" 
-              color={color} 
-              size={size} 
-            />
-          ),
-          headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Ana Sayfa", focused, color, size),
         }}
       />
       <Tab.Screen 
-        name="Harita" // Yeni Harita sekmesi
+        name="Harita" 
         component={MapScreen} 
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Icon 
-              name="map-marker" 
-              type="material-community" 
-              color={color} 
-              size={size} 
-            />
-          ),
-          headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Harita", focused, color, size),
         }}
       />
       <Tab.Screen 
         name="Profil" 
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Icon 
-              name="account" 
-              type="material-community" 
-              color={color} 
-              size={size} 
-            />
-          ),
-          headerShown: false
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Profil", focused, color, size),
         }}
       >
         {(props) => <ProfileScreen {...props} session={session} key={session.user.id} />}
