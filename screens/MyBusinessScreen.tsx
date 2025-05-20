@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform, Dimensions, Modal } from 'react-native'; // Modal ve useRef eklendi
+import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, TouchableOpacity, Platform, Dimensions, Modal, SafeAreaView, StatusBar } from 'react-native'; // SafeAreaView ve StatusBar eklendi
 import { Text, Input, Button, Icon, Card, CheckBox } from '@rneui/themed'; // CheckBox eklendi
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps'; // PROVIDER_DEFAULT eklendi
 import { supabase } from '../lib/supabase';
@@ -58,6 +58,8 @@ const MyBusinessScreen = () => {
   const [hasBusiness, setHasBusiness] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [fullScreenMapVisible, setFullScreenMapVisible] = useState(false); // Tam ekran harita modal durumu
+  const [initialModalLatitude, setInitialModalLatitude] = useState<number | null>(null);
+  const [initialModalLongitude, setInitialModalLongitude] = useState<number | null>(null);
   
   const mapRef = useRef<MapView>(null); // Küçük harita için ref
   const fullScreenMapRef = useRef<MapView>(null); // Tam ekran harita için ref
@@ -487,15 +489,15 @@ const MyBusinessScreen = () => {
       visible={isCityModalVisible}
       onRequestClose={() => setIsCityModalVisible(false)}
     >
-      <TouchableOpacity style={styles.modalOverlay} onPress={() => setIsCityModalVisible(false)} activeOpacity={1}>
-        <TouchableOpacity style={styles.modalContentSmall} activeOpacity={1} onPress={() => { /* Modal içeriğine tıklama yayılmasın */ }}>
-          <Text style={styles.modalTitleSmall}>Şehir Seçin</Text>
+      <TouchableOpacity style={styles.cityModalOverlay} onPress={() => setIsCityModalVisible(false)} activeOpacity={1}>
+        <TouchableOpacity style={styles.cityModalContent} activeOpacity={1} onPress={() => { /* Modal içeriğine tıklama yayılmasın */ }}>
+          <Text style={styles.cityModalTitle}>Şehir Seçin</Text>
           {loadingCities ? (
             <ActivityIndicator size="large" color="#0066CC" style={{marginVertical: 20}} />
           ) : cities.length === 0 ? (
             <View style={{padding: 20, alignItems: 'center'}}>
               <Icon name="alert-circle-outline" type="ionicon" color="#F44336" size={40} />
-              <Text style={[styles.modalItemText, {textAlign: 'center', marginTop: 10, marginBottom: 5}]}>
+              <Text style={[styles.cityOptionText, {textAlign: 'center', marginTop: 10, marginBottom: 5}]}>
                 Şehir listesi yüklenemedi
               </Text>
               <Text style={{color: '#666', textAlign: 'center', marginBottom: 10}}>
@@ -507,13 +509,13 @@ const MyBusinessScreen = () => {
               {cities.map(city => (
                 <TouchableOpacity 
                   key={city.id} 
-                  style={styles.modalItem}
+                  style={styles.cityOptionButton}
                   onPress={() => {
                     setSelectedCityId(city.id);
                     setIsCityModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalItemText}>{city.name}</Text>
+                  <Text style={city.id === selectedCityId ? styles.cityOptionTextSelected : styles.cityOptionText}>{city.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -525,76 +527,81 @@ const MyBusinessScreen = () => {
   );
 
   const renderEditForm = () => (
-    <View>
-      <Input label="İşyeri Adı" placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+    <ScrollView style={styles.editFormContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.formSectionTitle}>İşletme Bilgileri</Text>
       
-      {/* Şehir Seçici */}
-      <Text style={styles.label}>Şehir</Text>
-      <TouchableOpacity onPress={() => setIsCityModalVisible(true)} style={styles.pickerButton} disabled={saving || uploadingPhoto || publishing}>
-        <Text style={styles.pickerButtonText}>
+      <Text style={styles.formLabel}>İşyeri Adı</Text>
+      <Input placeholder="Harika İşyerim" value={businessName} onChangeText={setBusinessName} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      
+      <Text style={styles.formLabel}>Şehir</Text>
+      <TouchableOpacity onPress={() => setIsCityModalVisible(true)} style={styles.cityPickerButton} disabled={saving || uploadingPhoto || publishing}>
+        <Text style={selectedCityId ? styles.cityPickerButtonText : styles.cityPickerButtonPlaceholder}> 
           {selectedCityId ? (cities.find(c => c.id === selectedCityId)?.name || "Şehir Bulunamadı") : "Şehir Seçiniz"}
         </Text>
         <Icon name="chevron-down" type="material-community" color="#555" />
       </TouchableOpacity>
 
-      <Input label="Açıklama / Özellikler" placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
-      <Input label="Adres" placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      <Text style={styles.formLabel}>Açıklama / Özellikler</Text>
+      <Input placeholder="İşyerinizin sunduğu hizmetler, ürünler vb." value={description} onChangeText={setDescription} multiline numberOfLines={4} inputContainerStyle={[styles.inputContainer, styles.multilineInputContainer]} disabled={saving || uploadingPhoto || publishing} />
       
-      <Text style={styles.sectionTitle}>Hizmet Türleri</Text>
+      <Text style={styles.formLabel}>Adres</Text>
+      <Input placeholder="Tam adresiniz" value={address} onChangeText={setAddress} inputContainerStyle={styles.inputContainer} disabled={saving || uploadingPhoto || publishing} />
+      
+      <Text style={styles.formSectionTitle}>Hizmet Türleri</Text> 
       {loadingServiceTypes ? (
         <ActivityIndicator style={{ marginVertical: 10 }} />
       ) : serviceTypes.length === 0 ? (
-        <Text style={styles.infoTextSmall}>Seçilebilecek hizmet türü bulunamadı. Lütfen Supabase panelinden 'ServiceTypes' tablosuna veri ekleyin.</Text>
+        <Text style={{textAlign: 'center', marginVertical: 10, color: '#6c757d' }}>Seçilebilecek hizmet türü bulunamadı.</Text> 
       ) : (
-        <View style={styles.serviceTypesContainer}>
+        <View style={styles.serviceTypesContainerEditor}>
           {serviceTypes.map(service => (
             <CheckBox
               key={service.id}
               title={service.name}
-              checked={selectedServiceTypeIds.includes(service.id)}
               onPress={() => handleServiceTypeToggle(service.id)}
-              containerStyle={styles.checkboxContainer}
-              textStyle={styles.checkboxText}
-              checkedColor="#007bff"
+              containerStyle={styles.checkboxContainerEditor}
+              textStyle={styles.checkboxTextEditor}
+              checked={selectedServiceTypeIds.includes(service.id)}
+              checkedColor="#007AFF" 
               disabled={saving || uploadingPhoto || publishing}
             />
           ))}
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>Konum Seçimi</Text>
-      <TouchableOpacity onPress={() => setFullScreenMapVisible(true)} activeOpacity={0.8}>
-        <View style={styles.mapContainer}>
+      <Text style={styles.formSectionTitle}>Konum Seçimi</Text>
+      <TouchableOpacity onPress={() => {
+        setInitialModalLatitude(latitude); // Modal açılırken mevcut konumu kaydet
+        setInitialModalLongitude(longitude); // Modal açılırken mevcut konumu kaydet
+        setFullScreenMapVisible(true);
+      }} activeOpacity={0.8}>
+        <View style={styles.mapContainerSmall}>
           <MapView
             ref={mapRef}
             style={styles.map}
             provider={PROVIDER_DEFAULT}
-            scrollEnabled={false} // Küçük haritada kaydırmayı devre dışı bırak
-            zoomEnabled={false} // Küçük haritada zoomu devre dışı bırak
+            scrollEnabled={false} 
+            zoomEnabled={false} 
             pitchEnabled={false}
             rotateEnabled={false}
             initialRegion={{
-              latitude: latitude || 41.0082, // Başlangıç konumu (varsayılan: İstanbul)
+              latitude: latitude || 41.0082, 
               longitude: longitude || 28.9784,
               latitudeDelta: 0.0922,
               longitudeDelta: 0.0421,
             }}
-            region={latitude && longitude ? { // Eğer koordinat varsa haritayı oraya odakla
+            region={latitude && longitude ? { 
               latitude: latitude,
               longitude: longitude,
-              latitudeDelta: 0.01, // Daha yakın zoom
+              latitudeDelta: 0.01, 
               longitudeDelta: 0.01,
             } : undefined}
-            // onPress={handleMapInteraction} // Küçük haritaya tıklayınca modal açılacak
           >
             {latitude && longitude && (
-              <Marker
-                coordinate={{ latitude, longitude }}
-                // draggable={false} // Sürükleme tam ekranda olacak
-              />
+              <Marker coordinate={{ latitude, longitude }} />
             )}
           </MapView>
-          <View style={styles.mapOverlay}>
+          <View style={styles.mapOverlayButton}>
             <Icon name="search-outline" type="ionicon" color="#fff" size={20}/>
             <Text style={styles.mapOverlayText}>Konumu Görüntüle/Düzenle</Text>
           </View>
@@ -602,227 +609,380 @@ const MyBusinessScreen = () => {
         </View>
       </TouchableOpacity>
 
-      {/* Tam Ekran Harita Modalı */}
       <Modal
         visible={fullScreenMapVisible}
         animationType="slide"
         onRequestClose={() => setFullScreenMapVisible(false)}
       >
-        <View style={styles.fullscreenMapContainer}>
+        <View style={styles.fullScreenMapContainer}>
           <MapView
-            ref={fullScreenMapRef} // Tam ekran harita için ayrı ref
-            style={styles.fullscreenMap}
+            ref={fullScreenMapRef} 
+            style={styles.mapModalContent}
             provider={PROVIDER_DEFAULT}
             initialRegion={{
               latitude: latitude || 41.0082,
               longitude: longitude || 28.9784,
-              latitudeDelta: latitude ? 0.01 : 0.0922, // Konum varsa yakın zoom, yoksa genel
+              latitudeDelta: latitude ? 0.01 : 0.0922, 
               longitudeDelta: longitude ? 0.01 : 0.0421,
             }}
-            showsUserLocation // Kullanıcının yerini göster (isteğe bağlı)
-            onPress={handleMapInteraction} // Haritaya basınca konumu güncelle
+            showsUserLocation 
+            onPress={handleMapInteraction} 
           >
             {latitude && longitude && (
               <Marker
                 coordinate={{ latitude, longitude }}
                 title="İşletme Konumu"
                 description="Konumu ayarlamak için haritaya dokunun veya sürükleyin"
-                draggable // Sürüklenebilir marker
-                onDragEnd={handleMapInteraction} // Sürükleme bitince konumu güncelle
+                draggable 
+                onDragEnd={handleMapInteraction} 
               />
             )}
           </MapView>
           
-          {/* Zoom Kontrolleri */}
-          <View style={styles.zoomControls}>
-            <TouchableOpacity style={styles.zoomButton} onPress={zoomIn}>
-              <Icon name="add" type="material" color="#333" size={24} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.zoomButton, { borderBottomWidth: 0 }]} onPress={zoomOut}>
-              <Icon name="remove" type="material" color="#333" size={24} />
-            </TouchableOpacity>
-          </View>
-          
-          {/* Kapatma Butonu */}
           <TouchableOpacity 
-            style={styles.closeButton} 
+            style={styles.mapModalCloseButton}
             onPress={() => setFullScreenMapVisible(false)}
           >
-            <Icon name="close" type="material" color="#333" size={28} />
+            <Icon name="close" type="ionicon" color="#333" size={30} />
           </TouchableOpacity>
+
+          <View style={styles.mapModalButtonsContainer}>
+            {latitude !== null && longitude !== null && (latitude !== initialModalLatitude || longitude !== initialModalLongitude) && (
+              <Button
+                title="Bu Konumu Kullan"
+                onPress={() => {
+                  // Enlem ve boylam zaten handleMapInteraction ile state'e set edildi.
+                  // Sadece modalı kapatıyoruz.
+                  setFullScreenMapVisible(false);
+                }}
+                buttonStyle={[styles.mapModalButton, styles.mapModalConfirmButton]}
+                titleStyle={styles.mapModalButtonText}
+              />
+            )}
+          </View>
         </View>
       </Modal>
 
-      <Text style={styles.sectionTitle}>İşyeri Fotoğrafları</Text>
-      <View style={styles.photosEditorContainer}>
-        <ScrollView horizontal style={styles.photosScrollView} showsHorizontalScrollIndicator={false}>
+      <Text style={styles.formSectionTitle}>İşyeri Fotoğrafları</Text>
+      <View style={styles.photosContainerEditor}>
+        <ScrollView horizontal style={styles.photoScrollView} showsHorizontalScrollIndicator={false}>
           {photos.map((url, index) => (
-            <View key={url} style={styles.photoItemContainer}>
-              <Image source={{ uri: url }} style={styles.photo} />
+            <View key={url} style={styles.photoThumbnailContainerEditor}>
+              <Image source={{ uri: url }} style={styles.photoThumbnailEditor} />
               <TouchableOpacity 
-                style={styles.deletePhotoButton} 
+                style={styles.deletePhotoButtonEditor} 
                 onPress={() => handleDeletePhoto(index)} 
                 disabled={saving || uploadingPhoto || publishing}
               >
                 <Icon name="close-circle" type="ionicon" color="#fff" size={24} />
               </TouchableOpacity>
-              <View style={styles.moveButtonsContainer}>
-                {index > 0 && (
-                  <TouchableOpacity 
-                    style={styles.moveButton} 
-                    onPress={() => movePhoto(index, index - 1)}
-                    disabled={saving || uploadingPhoto || publishing}
-                  >
-                    <Icon name="arrow-up-circle" type="ionicon" color="#fff" size={22} />
-                  </TouchableOpacity>
-                )}
-                {index < photos.length - 1 && (
-                  <TouchableOpacity 
-                    style={styles.moveButton} 
-                    onPress={() => movePhoto(index, index + 1)}
-                    disabled={saving || uploadingPhoto || publishing}
-                  >
-                    <Icon name="arrow-down-circle" type="ionicon" color="#fff" size={22} />
-                  </TouchableOpacity>
-                )}
-              </View>
             </View>
           ))}
           <TouchableOpacity 
-            style={styles.addPhotoCard} 
+            style={styles.addPhotoButtonEditor} 
             onPress={handlePickAndUploadImage} 
             disabled={saving || uploadingPhoto || publishing}
           >
             {uploadingPhoto ? (<ActivityIndicator color="#007bff" />) : (<Icon name="add-a-photo" type="material" color="#007bff" size={36} />)}
-            <Text style={styles.addPhotoText}>Fotoğraf Ekle</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
-      <Button title={saving || uploadingPhoto ? 'Kaydediliyor...' : 'Bilgileri Kaydet'} onPress={handleSaveBusinessDetails} disabled={saving || loading || uploadingPhoto || publishing} buttonStyle={styles.saveButton} containerStyle={styles.buttonContainer} />
-      {hasBusiness && (<Button title="Vazgeç" onPress={() => { setIsEditing(false); fetchOwnerIdAndInitialData(); }} type="outline" buttonStyle={styles.cancelButton} containerStyle={styles.buttonContainer} disabled={publishing} />)}
-    </View>
+      <Button title={saving || uploadingPhoto ? 'Kaydediliyor...' : 'Bilgileri Kaydet'} onPress={handleSaveBusinessDetails} disabled={saving || loading || uploadingPhoto || publishing} buttonStyle={[styles.actionButton, styles.saveButton]} titleStyle={styles.actionButtonTitle} containerStyle={styles.buttonContainer} />
+      {hasBusiness && (<Button title="Vazgeç" onPress={() => { setIsEditing(false); fetchOwnerIdAndInitialData(); }} type="outline" buttonStyle={[styles.actionButton, styles.cancelButton]} titleStyle={[styles.actionButtonTitle, styles.cancelButtonTitle]} containerStyle={styles.buttonContainer} disabled={publishing} />)}
+    </ScrollView>
   );
 
-  const renderPreview = () => (
-    <Card containerStyle={styles.card}>
-      <Card.Title style={styles.cardTitle}>{businessName || "İşyeri Adı Belirtilmemiş"}</Card.Title>
-      <Card.Divider />
-      <Text style={styles.previewLabel}>Durum:</Text>
-      <Text style={[styles.previewText, { color: isPublished ? 'green' : 'red', fontWeight: 'bold' }]}>
-        {isPublished ? 'Yayında' : 'Yayında Değil'}
-      </Text>
-      <Text style={styles.previewLabel}>Açıklama:</Text>
-      <Text style={styles.previewText}>{description || "Açıklama yok."}</Text>
-      <Text style={styles.previewLabel}>Adres:</Text>
-      <Text style={styles.previewText}>{address || "Adres belirtilmemiş."}</Text>
-      <Text style={styles.previewLabel}>Konum:</Text>
-      <Text style={styles.previewText}>{latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "Konum belirtilmemiş."}</Text>
-      <Text style={styles.previewLabel}>Fotoğraflar:</Text>
-      {photos.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScrollViewPreview}>
-          {photos.map((url, index) => (<Image key={index} source={{ uri: url }} style={styles.previewPhoto} />))}
-        </ScrollView>
-      ) : (<Text style={styles.previewText}>Henüz fotoğraf eklenmemiş.</Text>)}
-      
-      <Button 
-        title={publishing ? 'İşleniyor...' : (isPublished ? 'Yayından Kaldır' : 'Yayınla')} 
-        onPress={handleTogglePublish} 
-        disabled={publishing || loading}
-        buttonStyle={[styles.publishButton, { backgroundColor: isPublished ? '#dc3545' : '#28a745' }]} 
-        containerStyle={styles.buttonContainer} 
-        icon={{ name: isPublished ? 'eye-off-outline' : 'eye-outline', type: 'ionicon', color: 'white' }}
-      />
-      <Button 
-        title="İşyeri Bilgilerini Düzenle" 
-        onPress={() => setIsEditing(true)} 
-        icon={{ name: 'edit', type: 'material', color: 'white' }} 
-        buttonStyle={styles.editButton} 
-        containerStyle={styles.buttonContainer} 
-        disabled={publishing || loading}
-      />
-    </Card>
-  );
+  const renderPreview = () => {
+    if (loading) {
+      return (
+        <View style={styles.centeredLoader}> 
+          <ActivityIndicator size="large" color="#0066CC" />
+          <Text style={styles.loadingText}>İşletme Bilgileri Yükleniyor...</Text>
+        </View>
+      );
+    }
+
+    if (!hasBusiness && !isEditing) {
+      return (
+        <View style={styles.centeredMessageContainer}>
+          <Icon name="store-plus-outline" type="material-community" size={60} color="#4A90E2" />
+          <Text style={styles.centeredMessageText}>
+            Harika bir iş kurmaya ne dersin? Hadi, ilk işletmeni ekleyerek başla!
+          </Text>
+          <Button 
+            title="İşletme Ekle" 
+            onPress={() => setIsEditing(true)} 
+            icon={<Icon name="plus-circle" type="material-community" color="white" />} 
+            buttonStyle={styles.actionButton}
+            titleStyle={styles.actionButtonTitle}
+            containerStyle={{ marginTop: 20 }}
+          />
+        </View>
+      );
+    }
+
+    // isEditing true ise veya hasBusiness true ise (ve loading bittiyse) renderEditForm çağrılır.
+    // Bu mantık ana return içinde daha net yönetilebilir.
+
+    // Yeni Önizleme Tasarımı
+    const businessLocation = latitude && longitude ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : 'Konum Belirtilmemiş';
+    const displayName = `${businessName || 'İşletme Adı Belirtilmemiş'}${selectedCityId && cities.find(c => c.id === selectedCityId) ? `, ${cities.find(c => c.id === selectedCityId)?.name}` : ''}`;
+
+    return (
+      <Card containerStyle={styles.previewCard}>
+        <Text style={styles.previewBusinessName}>{displayName}</Text>
+        <Card.Divider style={styles.previewDivider} />
+
+        <View style={styles.previewInfoRow}>
+          <Text style={styles.previewLabel}>Durum:</Text>
+          <Text style={[styles.previewValue, isPublished ? styles.statusPublished : styles.statusUnpublished]}>
+            {isPublished ? 'Yayında' : 'Yayında Değil'}
+          </Text>
+        </View>
+
+        <View style={styles.previewInfoRow}>
+          <Text style={styles.previewLabel}>Açıklama:</Text>
+          <Text style={styles.previewValue} numberOfLines={3}>{description || '-'}</Text>
+        </View>
+
+        <View style={styles.previewInfoRow}>
+          <Text style={styles.previewLabel}>Adres:</Text>
+          <Text style={styles.previewValue} numberOfLines={2}>{address || '-'}</Text>
+        </View>
+
+        <View style={styles.previewInfoRow}>
+          <Text style={styles.previewLabel}>Konum:</Text>
+          <Text style={styles.previewValue}>{businessLocation}</Text>
+        </View>
+        
+        {photos && photos.length > 0 && (
+          <View style={styles.photoSectionContainer}>
+            <Text style={styles.previewLabel}>Fotoğraflar:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScrollView}>
+              {photos.map((photoUrl, index) => (
+                <Image key={index} source={{ uri: photoUrl }} style={styles.previewPhotoItem} />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        <Button
+          title={isPublished ? 'Yayından Kaldır' : 'Yayınla'}
+          onPress={handleTogglePublish}
+          loading={publishing}
+          buttonStyle={[styles.actionButton, isPublished ? styles.unpublishButton : styles.publishButton]}
+          icon={<Icon name={isPublished ? "eye-off-outline" : "eye-outline"} type="ionicon" color="white" size={20} style={{marginRight: 8}}/>}
+          titleStyle={styles.actionButtonTitle}
+          containerStyle={styles.actionButtonContainer}
+        />
+        <Button
+          title="İşyeri Bilgilerini Düzenle"
+          onPress={() => setIsEditing(true)}
+          buttonStyle={[styles.actionButton, styles.editInfoButton]}
+          icon={<Icon name="pencil-outline" type="ionicon" color="white" size={20} style={{marginRight: 8}}/>}
+          titleStyle={styles.actionButtonTitle}
+          containerStyle={styles.actionButtonContainer}
+        />
+      </Card>
+    );
+  };
 
   if (loading) {
-    return (<View style={styles.loadingContainer}><ActivityIndicator size="large" /><Text>Yükleniyor...</Text></View>);
+    return (<View style={styles.centeredLoader}><ActivityIndicator size="large" /><Text>Yükleniyor...</Text></View>);
   }
   if (!ownerId && !loading) {
-    return (<View style={styles.loadingContainer}><Text>Kullanıcı oturumu bulunamadı.</Text></View>);
+    return (<View style={styles.centeredLoader}><Text>Kullanıcı oturumu bulunamadı.</Text></View>);
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text h3 style={styles.header}>İşyerim</Text>
-      {isEditing ? renderEditForm() : (hasBusiness ? renderPreview() : (
-        <View style={styles.centeredContent}>
-          <Text style={styles.infoText}>Henüz bir işyeri kaydınız bulunmuyor.</Text>
-          <Button title="Yeni İşyeri Ekle" onPress={() => { 
-            setIsEditing(true); 
-            setHasBusiness(false); 
-            setCurrentBusinessId(null); // Yeni kayıt için ID'yi sıfırla
-            setBusinessName(''); 
-            setDescription(''); 
-            setAddress(''); 
-            setPhotos([]); 
-            setIsPublished(false); 
-            setSelectedCityId(null); // Yeni kayıt için şehir ID'sini sıfırla
-            setSelectedServiceTypeIds([]);
-          }} 
-          icon={{ name: 'add-circle', type: 'ionicon', color: 'white' }} 
-          buttonStyle={styles.addButton} />
-        </View>
-      ))}
-      {renderCityPickerModal()} {/* Şehir seçme modalını render et */}
-    </ScrollView>
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} backgroundColor={styles.safeAreaContainer.backgroundColor} />
+      <ScrollView style={styles.scrollViewStyle} contentContainerStyle={styles.scrollContentContainer}>
+        {isEditing ? renderEditForm() : renderPreview()}
+        {renderCityPickerModal()} 
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+  safeAreaContainer: { 
+    flex: 1,
+    backgroundColor: '#E0F7FA', 
   },
-  contentContainer: { padding: 20, paddingBottom: 40 },
-  loadingContainer: {
+  scrollViewStyle: { 
+    flex: 1, 
+  },
+  scrollContentContainer: {
+    flexGrow: 1, 
+    padding: 15, 
+  },
+  centeredLoader: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
-  header: { textAlign: 'center', marginBottom: 25, color: '#333', fontWeight: 'bold' },
-  inputContainer: { backgroundColor: '#fff', borderRadius: 8, borderWidth:1, borderColor: '#ddd', paddingHorizontal:10, marginBottom: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#333', marginTop: 20, marginBottom: 10 }, 
-  mapContainer: {
-    height: 180, // Küçük haritanın yüksekliği ayarlandı
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    overflow: 'hidden', 
-    position: 'relative', // Overlay için
-    backgroundColor: '#e9ecef', // Harita yüklenirken arka plan
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#333',
   },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  mapOverlay: { // Küçük harita üzerine tıklama alanı
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  centeredMessageContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8, // Kenarlarla uyumlu
-    flexDirection: 'row', // İkon ve metin yan yana
-    padding: 10,
+    paddingHorizontal: 20,
   },
-  mapOverlayText: {
-    color: '#fff',
+  centeredMessageText: {
+    fontSize: 18,
+    color: '#4A5568',
+    textAlign: 'center',
+    marginTop: 15,
+    lineHeight: 26,
+  },
+  previewCard: {
+    borderRadius: 15,
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 0, 
+    elevation: 4,
+    shadowColor: '#B0C4DE',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  previewBusinessName: {
+    fontSize: 22,
     fontWeight: 'bold',
-    marginLeft: 8,
+    color: '#2C3E50',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  previewDivider: {
+    marginBottom: 15,
+  },
+  previewInfoRow: {
+    marginBottom: 12,
+  },
+  previewLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#546E7A',
+    marginBottom: 4,
+  },
+  previewValue: {
+    fontSize: 16,
+    color: '#37474F',
+    lineHeight: 22,
+  },
+  statusPublished: {
+    color: '#4CAF50', 
+    fontWeight: 'bold',
+  },
+  statusUnpublished: {
+    color: '#F44336', 
+    fontWeight: 'bold',
+  },
+  photoSectionContainer: {
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  photoScrollView: {
+    marginTop: 8,
+  },
+  previewPhotoItem: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  actionButtonContainer: {
+    marginTop: 10,
+    width: '100%',
+  },
+  actionButton: {
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  actionButtonTitle: {
+    fontWeight: 'bold',
     fontSize: 16,
   },
-  mapHelperText: {
+  unpublishButton: {
+    backgroundColor: '#E53935', 
+  },
+  publishButton: {
+    backgroundColor: '#43A047', 
+  },
+  editInfoButton: {
+    backgroundColor: '#1E88E5', 
+  },
+  editFormContainer: {
+    flex: 1,
+    paddingHorizontal: 5, 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 15,
+  },
+  formSectionTitle: { 
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2C3E50',
+    marginTop: 20, 
+    marginBottom: 15,
+    paddingBottom: 8, 
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  formLabel: { 
+    fontSize: 15, 
+    fontWeight: '500', 
+    color: '#4A5568', 
+    marginBottom: 8, 
+    marginLeft: 5, 
+  },
+  inputContainer: { 
+    backgroundColor: '#F7F9FC', 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    borderColor: '#DDE3EC', 
+    paddingHorizontal: 15, 
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8, 
+    marginBottom: 18, 
+    height: Platform.OS === 'ios' ? 48 : 'auto', 
+  },
+  multilineInputContainer: {
+    height: 100, 
+    paddingVertical: 12, 
+    textAlignVertical: 'top', 
+  },
+  mapContainerSmall: {
+    height: 200,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  map: { flex: 1 },
+  mapOverlayButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 8,
+    borderRadius: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mapOverlayText: { 
+    color: '#fff',
+    marginLeft: 5,
+    fontSize: 12,
+  },
+  mapHelperText: { 
     position: 'absolute',
     bottom: 5,
     left: 5,
@@ -833,209 +993,177 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     padding: 3,
     borderRadius: 4,
-    zIndex: 1, // Overlay'in üzerinde olması için
+    zIndex: 1,
   },
-  fullscreenMapContainer: { // Modal içeriği
+  fullScreenMapContainer: {
     flex: 1,
-    position: 'relative', // Butonlar için
-  },
-  fullscreenMap: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  zoomControls: { // Zoom butonlarının container'ı
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 20, // iOS için alttan boşluk
-    right: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    // Gölge efektleri (isteğe bağlı)
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  zoomButton: { // Zoom butonları (+/-)
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
-    borderBottomWidth: 1, // Butonlar arası çizgi
-    borderBottomColor: '#eee',
+    alignItems: 'center',
   },
-  closeButton: { // Kapatma butonu (X)
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20, // iOS için yukarıdan boşluk
-    right: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 10,
-    borderRadius: 20, // Yuvarlak buton
-    // Gölge
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  photosEditorContainer: { 
-    marginBottom: 20,
-  },
-  photosScrollView: { 
-  },
-  photoItemContainer: { 
-    marginRight: 10, 
+  mapModalContent: {
+    width: Dimensions.get('window').width * 0.95,
+    height: Dimensions.get('window').height * 0.85,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    overflow: 'hidden',
     position: 'relative',
-    width: 100, 
-    height: 100, 
   },
-  photo: { width: '100%', height: '100%', borderRadius: 8, backgroundColor: '#e9ecef' },
-  deletePhotoButton: { 
-    position: 'absolute', 
-    top: -8, 
-    right: -8, 
-    backgroundColor: 'rgba(220,53,69,0.85)', 
-    borderRadius: 15, 
-    width: 30, 
-    height: 30, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    zIndex: 1 
-  },
-  moveButtonsContainer: {
+  mapModalCloseButton: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingVertical: 2,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
+    top: 85,
+    right: 25,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 20,
+    padding: 8,
   },
-  moveButton: {
-    paddingHorizontal: 5,
-  },
-  addPhotoCard: { 
-    width: 100, 
-    height: 100, 
-    borderRadius: 8, 
-    backgroundColor: '#f8f9fa', 
+  photosContainerEditor: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 15 },
+  photoThumbnailContainerEditor: { marginRight: 10, marginBottom: 10, position: 'relative' },
+  photoThumbnailEditor: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#e0e0e0' },
+  deletePhotoButtonEditor: { position: 'absolute', top: -5, right: -5, backgroundColor: 'rgba(220,53,69,0.9)', borderRadius: 12, padding:3, zIndex:1 },
+  addPhotoButtonEditor: {
+    width: 80, 
+    height: 80, 
+    borderRadius: 6, 
+    backgroundColor: '#e9ecef', 
     justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 2, 
-    borderColor: '#007bff', 
-    borderStyle: 'dashed', 
-    padding:10,
-    marginLeft: 10, 
-  },
-  addPhotoText: { marginTop: 5, fontSize: 12, color: '#007bff', textAlign: 'center' },
-  buttonContainer: { marginTop: 10, marginBottom:10 },
-  saveButton: { backgroundColor: '#28a745', borderRadius: 8, paddingVertical: 12 },
-  publishButton: { borderRadius: 8, paddingVertical: 12 }, 
-  cancelButton: { borderColor: '#6c757d', borderRadius: 8, paddingVertical: 10, borderWidth:1 },
-  editButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12 },
-  addButton: { backgroundColor: '#007bff', borderRadius: 8, paddingVertical: 12, minWidth: 200 },
-  centeredContent: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingTop: 50 },
-  infoText: { fontSize: 16, color: '#6c757d', marginBottom: 20, textAlign: 'center' },
-  infoTextSmall: { fontSize: 14, color: '#6c757d', marginVertical: 10, textAlign: 'center', fontStyle: 'italic' },
-  card: { borderRadius: 10, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 3 },
-  cardTitle: { textAlign: 'center', color: '#333', fontWeight:'bold', fontSize: 20 },
-  previewLabel: { fontSize: 14, color: '#555', fontWeight: 'bold', marginTop: 10 },
-  previewText: { fontSize: 16, color: '#333', marginBottom: 10, lineHeight: 22 },
-  photosScrollViewPreview: { marginTop: 5, marginBottom:15, maxHeight:110 },
-  previewPhoto: { width: 90, height: 90, borderRadius: 6, marginRight: 8, backgroundColor: '#e0e0e0' },
-  serviceTypesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    marginRight: 10, 
     marginBottom: 10,
   },
-  checkboxContainer: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    padding: 0,
-    marginLeft: 0,
-    marginRight: 15, // Checkboxlar arası boşluk
-    marginVertical: 5,
+  serviceTypesContainerEditor: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    marginBottom: 20, 
+    padding: 15, 
+    backgroundColor:'#F7F9FC', 
+    borderRadius:10,
+    borderWidth: 1,
+    borderColor: '#DDE3EC',
   },
-  checkboxText: {
-    fontWeight: 'normal',
-    marginLeft: 5,
+  checkboxContainerEditor: { 
+    backgroundColor: 'transparent', 
+    borderWidth: 0, 
+    marginLeft: 0, 
+    marginRight: 0, 
+    padding: 6, 
+    width: '50%', 
   },
-  label: { // Input label'ları için genel stil
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#444',
-    marginBottom: 8,
-    marginLeft: 2, // Hafif iç boşluk
+  checkboxTextEditor: { 
+    fontWeight: 'normal', 
+    marginLeft: 8, 
+    fontSize: 14, 
+    color: '#34495E',
   },
-  pickerButton: { // Şehir seçici butonu için stil
+  cityPickerButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 15, // Yüksekliği artırıldı
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderColor: '#ddd',
+    paddingHorizontal: 15, 
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     borderWidth: 1,
-    marginBottom: 15, // Alt boşluk
-    // minHeight: 50, // Input ile benzer yükseklik
+    borderColor: '#DDE3EC', 
+    borderRadius: 10, 
+    backgroundColor: '#F7F9FC', 
+    marginBottom: 18, 
+    height: 48, // Hem iOS hem de Android için sabit yükseklik
   },
-  pickerButtonText: {
-    fontSize: 16,
+  cityPickerButtonText: { 
+    fontSize: 16, 
     color: '#333',
   },
-  modalOverlay: { // Modal için genel overlay
+  cityPickerButtonPlaceholder: {
+    fontSize: 16, 
+    color: '#888', 
+  },
+  cityModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)', // Biraz daha koyu overlay
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContentSmall: { // Şehir/Hizmet seçimi gibi küçük modallar için
+  cityModalContent: {
     backgroundColor: 'white',
-    borderRadius: 12, // Daha yuvarlak köşeler
-    paddingTop: 20,
-    paddingBottom: 10, // Alt boşluk azaltıldı
-    paddingHorizontal: 0, // İçerik kendi padding'ini yönetecek
-    width: '85%', // Genişlik biraz artırıldı
-    maxHeight: '70%', // Yükseklik biraz artırıldı
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    borderRadius: 10,
+    padding: 20,
+    width: '90%',
+    maxHeight: '70%',
   },
-  modalTitleSmall: {
-    fontSize: 20, // Başlık büyütüldü
+  cityModalTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 15,
     textAlign: 'center',
-    color: '#333',
-    paddingHorizontal: 20, // Başlık için yan boşluklar
   },
-  modalItem: {
-    paddingVertical: 15, // Öğe yüksekliği artırıldı
-    paddingHorizontal: 20, // Yan boşluklar eklendi
+  cityScrollView: {
+    maxHeight: Dimensions.get('window').height * 0.4,
+  },
+  cityOptionButton: {
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0', // Daha yumuşak ayırıcı
+    borderBottomColor: '#eee',
   },
-  modalItemText: {
-    fontSize: 17, // Metin boyutu artırıldı
-    textAlign: 'left', // Metin sola hizalandı
+  cityOptionText: {
+    fontSize: 17,
     color: '#333',
+  },
+  cityOptionTextSelected: {
+    fontWeight: 'bold',
+    color: '#0066CC',
   },
   modalCloseButton: {
-    marginTop: 10, // Kapat butonu ve liste arası boşluk
-    marginHorizontal: 20, // Buton için yan boşluklar
-    marginBottom: 10,
+    marginTop: 15,
+    paddingVertical: 10,
     backgroundColor: '#0066CC',
-    paddingVertical: 8, // Buton yüksekliği azaltıldı
     borderRadius: 8,
   },
-  modalCloseButtonText: { // Kapat butonu metin stili
+  modalCloseButtonText: {
+    color: 'white',
+    textAlign: 'center',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+  },
+  saveButton: { backgroundColor: '#28a745', borderRadius: 10, paddingVertical: 14 }, 
+  cancelButton: { 
+    borderColor: '#757575', 
+    backgroundColor: '#F0F0F0', 
+    borderRadius: 10, 
+    paddingVertical: 14, 
+    borderWidth: 1 
+  },
+  cancelButtonTitle: { 
+    color: '#333333', 
+    fontWeight: '600', 
+  },
+  buttonContainer: { marginTop: 12, marginBottom: 8 }, 
+  mapModalButtonsContainer: {
+    position: 'absolute',
+    bottom: 120,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  mapModalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 150, // Butonların benzer genişlikte olması için
+  },
+  mapModalConfirmButton: {
+    backgroundColor: '#4CAF50', // Yeşil tonu
+  },
+  mapModalCancelButton: {
+    backgroundColor: '#f44336', // Kırmızı tonu
+  },
+  mapModalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 

@@ -4,6 +4,8 @@ import { Card, Icon, Button, CheckBox } from '@rneui/themed'; // Button, CheckBo
 import { supabase } from '../lib/supabase';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import BusinessListItem, { ListedBusiness } from '../components/BusinessListItem'; // BusinessListItem import edildi ve ListedBusiness buradan alındı
+import BusinessGridItem from '../components/BusinessGridItem'; // BusinessGridItem import edildi
 
 // BusinessDetailScreen'e yönlendirme için tip tanımı (App.tsx'deki RootStackParamList'e göre güncellenecek)
 // Şimdilik owner_id veya business_id (hangisi kullanılacaksa) parametresini kabul edecek şekilde genel tutalım.
@@ -13,17 +15,6 @@ type RootStackParamList = {
   // Diğer ekranlarınız...
 };
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BusinessDetail'>;
-
-interface ListedBusiness {
-  id: string; // businesses tablosunun PK'sı (owner_id yerine id kullanacağız)
-  owner_id: string; 
-  name: string;
-  description: string | null;
-  address: string | null;
-  photos: string[] | null;
-  city_id?: string | null; // Şehir ID'si eklendi
-  city_name?: string | null; // Şehir adı eklendi
-}
 
 interface ServiceType {
   id: string;
@@ -35,6 +26,23 @@ interface City { // Şehir arayüzü eklendi
   id: string;
   name: string;
 }
+
+type Business = {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  address: string;
+  photos: string[];
+  city_id: string;
+  city_name: string;
+  services?: { name: string }[]; // İşletmenin sunduğu hizmetler için eklendi
+};
+
+const screenWidth = Dimensions.get('window').width;
+const numColumns = 2;
+const spacing = 10;
+const itemWidth = (screenWidth - spacing * (numColumns + 1)) / numColumns;
 
 const HomeScreen = () => {
   const [allBusinesses, setAllBusinesses] = useState<ListedBusiness[]>([]);
@@ -49,9 +57,7 @@ const HomeScreen = () => {
   const [loadingCities, setLoadingCities] = useState(true); // Şehir yükleme durumu eklendi
   const [error, setError] = useState<string | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [animatedHeaderText, setAnimatedHeaderText] = useState('');
-  const fullHeaderText = "Yakındaki Tamirciler";
-  const headerAnimationTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout referansını tutmak için
+  const [isGridView, setIsGridView] = useState(false); // Görünüm modu için state
 
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
@@ -88,25 +94,37 @@ const HomeScreen = () => {
           address, 
           photos,
           city_id,
-          city:cities(name)
+          city:cities(name),
+          BusinessServices!inner(service_type_id, ServiceTypes!inner(name))
         `)
         .eq('is_published', true);
 
       if (businessesError) throw businessesError;
       
-      // İşyeri verilerini dönüştür ve şehir adını ekle
       const processedBusinesses = businessesData?.map(business => {
-        // TypeScript'e daha açık bilgi vermek için interfaceleri kullan
-        const cityInfo = business.city as { name: string }[] | null;
+        const cityInfo = business.city as { name: string }[] | null; 
+        
+        // Gelen BusinessServices yapısı: { ServiceTypes: { name: string } }[] şeklinde olmalı
+        // Veya { service_type_id: string, ServiceTypes: { name: string } }[] şeklinde
+        // Supabase join syntaxına göre bunu ayarlamamız lazım.
+        // Şimdilik any[] olarak alıp, map içinde kontrol edelim.
+        const rawServices = (business.BusinessServices || []) as any[];
+        const services = rawServices
+          .map(bs => bs.ServiceTypes?.name)
+          .filter(name => typeof name === 'string')
+          .map(name => ({ name: name as string }));
+
         return {
           ...business,
           city_name: cityInfo && cityInfo.length > 0 ? cityInfo[0].name : null,
-          city: undefined // Orijinal city nesnesini kaldır, city_name kullan
+          city: undefined, 
+          services: services,
+          BusinessServices: undefined, 
         };
       }) || [];
       
-      setAllBusinesses(processedBusinesses);
-      setFilteredBusinesses(processedBusinesses); // Başlangıçta tümü filtrelenmiş
+      setAllBusinesses(processedBusinesses as ListedBusiness[]);
+      setFilteredBusinesses(processedBusinesses as ListedBusiness[]);
 
     } catch (err) {
       if (err instanceof Error) {
@@ -132,32 +150,6 @@ const HomeScreen = () => {
       fetchData();
     }, [fetchData])
   );
-
-  useEffect(() => {
-    let currentIndex = 0;
-    setAnimatedHeaderText(''); // Her odaklanmada animasyonu sıfırla
-
-    const animateHeader = () => {
-      if (currentIndex < fullHeaderText.length) {
-        setAnimatedHeaderText((prev) => prev + fullHeaderText[currentIndex]);
-        currentIndex++;
-        headerAnimationTimeoutRef.current = setTimeout(animateHeader, 150); // Yazma hızı (ms)
-      } else {
-        // İsteğe bağlı: Tamamlandıktan sonra bir süre bekleyip tekrar başlatabiliriz.
-        // Şimdilik burada duruyor.
-      }
-    };
-
-    // Animasyonu hemen başlat
-    animateHeader();
-
-    return () => {
-      // Component unmount olduğunda veya useEffect tekrar çalıştığında timeout'u temizle
-      if (headerAnimationTimeoutRef.current) {
-        clearTimeout(headerAnimationTimeoutRef.current);
-      }
-    };
-  }, []); // Şimdilik sadece mount olduğunda çalışsın, useFocusEffect ile de tetiklenebilir
 
   const applyFilters = async () => {
     setFilterModalVisible(false);
@@ -219,49 +211,46 @@ const HomeScreen = () => {
     );
   };
 
+  const renderBusinessItem = ({
+    item,
+    index,
+  }: {
+    item: any; 
+    index: number;
+  }) => {
+    if (isGridView) {
+      // Izgaradaki son eleman olup olmadığını kontrol et
+      const isLastInRow = (index + 1) % numColumns === 0;
+      return <BusinessGridItem item={item} itemWidth={itemWidth} isLastInRow={isLastInRow} />;
+    }
+    return <BusinessListItem item={item} />;
+  };
 
-  const renderBusinessItem = ({ item }: { item: ListedBusiness }) => (
-    <TouchableOpacity onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}> 
-      <Card containerStyle={styles.card}>
-        {item.photos && item.photos.length > 0 && item.photos[0] ? (
-          <Card.Image source={{ uri: item.photos[0] }} style={styles.cardImage} resizeMode="cover" />
-        ) : (
-          <View style={styles.noImageContainer}>
-            <Icon name="storefront-outline" type="material-community" size={60} color="#A0D2FA" />
-            <Text style={styles.noImageText}>Harika Bir Yer</Text>
-          </View>
-        )}
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.name || ''}</Text>
-          <Card.Divider style={styles.cardDivider} />
-          <Text style={styles.cardDescription} numberOfLines={2}>
-            {item.description || 'Açıklama yakında eklenecek.'}
-          </Text>
-          {item.address && (
-            <View style={styles.addressContainer}>
-              <Icon name="location-pin" type="material" size={16} color="#0066CC" style={styles.addressIcon} />
-              <Text style={styles.addressTextContent} numberOfLines={1}>{item.address}</Text>
-            </View>
-          )}
-        </View>
-      </Card>
-    </TouchableOpacity>
-  );
+  const toggleViewMode = () => {
+    setIsGridView(prev => !prev);
+  };
 
   const renderListHeader = () => (
     <View style={styles.headerOuterContainer}>
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerTitleText}>Yakındaki Tamirciler</Text>
+      <Text style={styles.headerTitleText}>Yakındaki Tamirciler</Text>
+      <View style={styles.headerButtonsContainer}>
         <Button
           type="clear"
-          icon={<Icon name="filter-outline" type="ionicon" color="#007AFF" size={20} />}
+          icon={<Icon name={isGridView ? "list-outline" : "apps-outline"} type="ionicon" color="#007AFF" size={24} />}
+          onPress={toggleViewMode}
+          containerStyle={styles.headerButton}
+        />
+        <Button
+          type="clear"
+          icon={<Icon name="filter-outline" type="ionicon" color="#007AFF" size={24} />}
           onPress={() => setFilterModalVisible(true)}
+          containerStyle={styles.headerButton}
         />
       </View>
     </View>
   );
 
-  if (loadingBusinesses || loadingServiceTypes) {
+  if (loadingBusinesses || loadingServiceTypes || loadingCities) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#0066CC" />
@@ -357,16 +346,18 @@ const HomeScreen = () => {
       <FlatList
         data={filteredBusinesses}
         renderItem={renderBusinessItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContainer, {paddingTop: 10}] }
+        keyExtractor={(item) => isGridView ? `grid-${item.id}` : `list-${item.id}`}
+        numColumns={isGridView ? numColumns : 1}
+        key={isGridView ? 'GRID' : 'LIST'}
+        contentContainerStyle={isGridView ? styles.gridContainer : styles.listContainer}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={
-          <View style={styles.centered}>
+          <View style={styles.centeredEmptyList}>
             <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
             <Text style={styles.emptyText}>
               {selectedCityId || selectedServiceTypeIds.length > 0 ? 
                 "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : 
-                "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀"}
+                (allBusinesses.length === 0 && !loadingBusinesses ? "Henüz hiç işletme eklenmemiş. Keşfedilecek yerler yakında! 🚀" : "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀")}
             </Text>
           </View>
         }
@@ -387,6 +378,13 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#F4F7FC',
   },
+  centeredEmptyList: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
   errorText: {
     marginTop: 15,
     fontSize: 17,
@@ -402,119 +400,34 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   listContainer: {
-    paddingHorizontal: 0,
     paddingBottom: 20,
   },
-  headerOuterContainer: { 
+  gridContainer: {
+    paddingHorizontal: spacing / 2,
+    paddingBottom: 20,
+    paddingTop: spacing, // Izgara için üst boşluk
+  },
+  headerOuterContainer: {
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 20, 
-    paddingBottom: 12, 
-    backgroundColor: '#E0F7FA', 
-  },
-  headerContainer: {
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 10,
+    paddingBottom: 12,
+    backgroundColor: '#E0F7FA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'space-between', // Metin sola, buton sağa
-    marginBottom: 10,
   },
-  headerTitleText: { // Yeni stil
+  headerTitleText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#2C3E50',
   },
-  filterButton: {
-    backgroundColor: 'rgba(0, 122, 255, 0.08)', 
-    paddingHorizontal: 14, 
-    paddingVertical: 10, 
-    borderRadius: 20, 
-  },
-  filterButtonTitle: {
-    color: '#007AFF', 
-    marginLeft: 6, 
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  card: {
-    borderRadius: 18,
-    marginHorizontal: 16,
-    marginBottom: 20,
-    padding: 0, 
-    elevation: 4,
-    shadowColor: '#B0C4DE',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    backgroundColor: '#FFFFFF',
-    borderLeftWidth: 4,
-    borderLeftColor: '#55A6F7',
-  },
-  cardImageContainer: {
-    width: '100%',
-    height: 200,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-  },
-  cardImage: {
-    width: '100%',
-    height: 200,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-  },
-  noImageContainer: {
-    width: '100%',
-    height: 200,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    backgroundColor: '#E9F5FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  noImageText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#55A6F7',
-  },
-  cardContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-    color: '#34495E',
-  },
-  cardDivider: {
-    marginVertical: 4,
-    backgroundColor: '#E5EEF7',
-    height: 1,
-  },
-  cardDescription: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginBottom: 10,
-    lineHeight: 20,
-  },
-  addressContainer: {
+  headerButtonsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    backgroundColor: '#F4FAFF',
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
   },
-  addressIcon: {
-    marginRight: 6,
-  },
-  addressTextContent: {
-    fontSize: 12,
-    color: '#4E7AC7',
-    flexShrink: 1,
+  headerButton: {
+    marginLeft: 8,
   },
   retryButton: {
     marginTop: 20,
@@ -557,7 +470,7 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
   },
   modalScrollView: {
-    maxHeight: Dimensions.get('window').height * 0.5, 
+    maxHeight: Dimensions.get('window').height * 0.5,
     marginBottom: 15,
   },
   checkboxContainerModal: {
