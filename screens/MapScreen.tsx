@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Platform, TouchableOpacity } from 'react-native';
 import { Button, CheckBox, Icon } from '@rneui/themed';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, MapStyleElement } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -14,6 +14,53 @@ type RootStackParamList = {
   BusinessDetail: { businessId: string };
 };
 type MapScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BusinessDetail'>;
+
+// Özel harita stili
+const customMapStyle: MapStyleElement[] = [
+  {
+    "featureType": "poi.business",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.attraction",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.medical",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.school",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.government",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.place_of_worship",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "poi.sports_complex",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  }
+  // Diğer stil kuralları buraya eklenebilir
+];
 
 interface ServiceType {
   id: string;
@@ -121,6 +168,7 @@ const MapScreen = () => {
         }}
         showsUserLocation={true}
         onPress={handleMapPress}
+        showsPointsOfInterest={Platform.OS === 'ios' ? false : true}
       >
         {filteredMapBusinesses.map((business) => (
           <Marker

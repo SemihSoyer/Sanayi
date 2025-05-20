@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { StyleSheet, View, Alert, Platform, ScrollView, ActivityIndicator } from 'react-native';
-import { Button, Input, Avatar, Text } from '@rneui/themed';
+import { StyleSheet, View, Alert, Platform, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
+import { Button, Input, Avatar, Text, Card, Icon } from '@rneui/themed';
 import { Session } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../App';
+
+type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'App'>;
 
 export default function ProfileScreen({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [username, setUsername] = useState('');
   const [website, setWebsite] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // string | null olarak güncellendi
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
 
   useEffect(() => {
     if (session) getProfile();
@@ -34,9 +41,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
       if (data) {
         setUsername(data.username || '');
         setWebsite(data.website || '');
-        const fetchedAvatarUrl = data.avatar_url || null;
-        setAvatarUrl(fetchedAvatarUrl);
-        console.log('Profile fetched, avatarUrl:', fetchedAvatarUrl); // LOG 1
+        setAvatarUrl(data.avatar_url || null);
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -54,7 +59,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
   }: {
     username: string;
     website: string;
-    avatar_url: string | null; // string | null olarak güncellendi
+    avatar_url: string | null;
   }) {
     try {
       setLoading(true);
@@ -74,7 +79,6 @@ export default function ProfileScreen({ session }: { session: Session }) {
         throw error;
       }
       Alert.alert('Success', 'Profile updated successfully!');
-      // Optionally re-fetch profile or just update local state if confident
       if (avatar_url !== undefined) setAvatarUrl(avatar_url);
 
     } catch (error) {
@@ -95,7 +99,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
       }
 
       const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images', // Küçük harf 'images' olarak düzeltildi
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
@@ -113,26 +117,18 @@ export default function ProfileScreen({ session }: { session: Session }) {
 
         const fileExt = uri.split('.').pop();
         const fileName = `${session.user.id}_${Date.now()}.${fileExt}`;
-        const filePath = `${session.user.id}/${fileName}`; // Store in a user-specific folder
+        const filePath = `${session.user.id}/${fileName}`;
 
-        // Use FormData for uploading
         const formData = new FormData();
         formData.append('file', {
           uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
           name: fileName,
-          type: asset.mimeType || `image/${fileExt}`, // Ensure this is a valid MIME type
-        } as any); // 'as any' to bypass strict type checking for FormData append if needed
-
-        console.log('FormData created for file:', fileName, 'Type:', asset.mimeType || `image/${fileExt}`);
+          type: asset.mimeType || `image/${fileExt}`,
+        } as any);
         
         const { error: uploadError } = await supabase.storage
           .from('avatars')
           .upload(filePath, formData, {
-            // contentType is usually inferred from FormData, but can be set if needed
-            // For FormData, Supabase client might handle content type automatically.
-            // Explicitly setting it might sometimes cause issues with FormData.
-            // Let's try without it first, or ensure it's correctly derived.
-            // contentType: asset.mimeType || `image/${fileExt}`, 
             upsert: true, 
           });
 
@@ -140,22 +136,16 @@ export default function ProfileScreen({ session }: { session: Session }) {
           throw uploadError;
         }
 
-        // getPublicUrl sadece data: { publicUrl: string } döner, error objesi bu seviyede dönmez.
         const { data: publicURLData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        console.log('getPublicUrl data:', publicURLData); // LOG 2
         
         if (!publicURLData || !publicURLData.publicUrl) {
-            // Eğer publicUrl null veya undefined ise, bu bir sorun teşkil edebilir.
-            // Dosyanın varlığını veya bucket izinlerini kontrol etmek gerekebilir.
-            // Şimdilik bir hata fırlatıyoruz.
             console.error('Failed to get public URL. Data from getPublicUrl:', publicURLData);
             throw new Error('Could not retrieve a valid public URL for the avatar.');
         }
         
         const newAvatarUrl = publicURLData.publicUrl;
-        console.log('New avatar public URL:', newAvatarUrl); // LOG 4
-        setAvatarUrl(newAvatarUrl); // Update UI immediately
-        await updateProfileData({ username, website, avatar_url: newAvatarUrl }); // Save to DB
+        setAvatarUrl(newAvatarUrl);
+        await updateProfileData({ username, website, avatar_url: newAvatarUrl });
 
       }
     } catch (error) {
@@ -169,11 +159,7 @@ export default function ProfileScreen({ session }: { session: Session }) {
     }
   };
 
-
-  // Konsol loglarını görmek için avatarUrl'yi burada da loglayabiliriz.
-  // console.log('Rendering ProfileScreen, avatarUrl state:', avatarUrl);
-
-  if (loading && !avatarUrl && !username) { // Daha kapsamlı ilk yükleme kontrolü
+  if (loading && !avatarUrl && !username) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0066CC"/>
@@ -181,122 +167,194 @@ export default function ProfileScreen({ session }: { session: Session }) {
     );
   }
 
+  const menuItems: { title: string; icon: string; screen: any }[] = [
+    { title: 'Ayarlar', icon: 'settings-outline', screen: 'Settings' },
+    { title: 'Bize Ulaşın', icon: 'mail-outline', screen: 'ContactUs' },
+    { title: 'Gizlilik Politikası', icon: 'shield-checkmark-outline', screen: 'PrivacyPolicy' },
+    { title: 'Hizmet Koşulları', icon: 'document-text-outline', screen: 'TermsOfService' },
+  ];
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.avatarContainer}>
-        <Avatar
-          size={150}
-          rounded
-          source={avatarUrl ? { uri: avatarUrl } : undefined}
-          title={username ? username.charAt(0).toUpperCase() : (session.user.email ? session.user.email.charAt(0).toUpperCase() : 'P')}
-          containerStyle={styles.avatar}
-        >
-          <Avatar.Accessory size={34} onPress={handlePickAndUploadAvatar} disabled={uploading || loading} />
-        </Avatar>
-        {(uploading || (loading && avatarUrl === null)) && <ActivityIndicator style={styles.uploadIndicator} size="small" color="#0066CC"/>}
-      </View>
-      
-      <Text style={styles.emailText}>{session?.user?.email}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <Card containerStyle={styles.cardContainer}>
+          <View style={styles.avatarSection}>
+            <Avatar
+              size={120}
+              rounded
+              source={avatarUrl ? { uri: avatarUrl } : undefined}
+              title={username ? username.charAt(0).toUpperCase() : (session.user.email ? session.user.email.charAt(0).toUpperCase() : 'P')}
+              containerStyle={styles.avatar}
+            >
+              <Avatar.Accessory size={30} onPress={handlePickAndUploadAvatar} disabled={uploading || loading} iconStyle={styles.avatarAccessory} />
+            </Avatar>
+            {(uploading || (loading && avatarUrl === null && !username)) && <ActivityIndicator style={styles.uploadIndicator} size="small" color="#0066CC"/>}
+          </View>
+          
+          <Text style={styles.emailText}>{session?.user?.email}</Text>
 
-      <Input
-        label="Kullanıcı Adı"
-        value={username}
-        onChangeText={setUsername}
-        placeholder="Kullanıcı adınız"
-        inputContainerStyle={styles.inputContainer}
-        labelStyle={styles.label}
-        autoCapitalize="none"
-      />
-      <Input
-        label="Website"
-        value={website}
-        onChangeText={setWebsite}
-        placeholder="https://siteniz.com"
-        inputContainerStyle={styles.inputContainer}
-        labelStyle={styles.label}
-        autoCapitalize="none"
-      />
+          <Input
+            label="Kullanıcı Adı"
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Kullanıcı adınız"
+            inputContainerStyle={styles.inputContainer}
+            labelStyle={styles.label}
+            autoCapitalize="none"
+            leftIcon={<Icon name='person-outline' type='ionicon' size={20} color='#86939e' />}
+          />
+          <Input
+            label="Website"
+            value={website}
+            onChangeText={setWebsite}
+            placeholder="https://siteniz.com"
+            inputContainerStyle={styles.inputContainer}
+            labelStyle={styles.label}
+            autoCapitalize="none"
+            leftIcon={<Icon name='globe-outline' type='ionicon' size={20} color='#86939e' />}
+          />
 
-      <Button
-        title={loading || uploading ? 'Güncelleniyor...' : 'Profili Güncelle'}
-        onPress={() => updateProfileData({ username, website, avatar_url: avatarUrl })}
-        disabled={loading || uploading}
-        buttonStyle={styles.button}
-        containerStyle={styles.buttonContainer}
-      />
-      <Button
-        title="Çıkış Yap"
-        onPress={() => supabase.auth.signOut()}
-        buttonStyle={[styles.button, styles.signOutButton]}
-        containerStyle={styles.buttonContainer}
-        disabled={uploading}
-      />
-    </ScrollView>
+          <Button
+            title={loading || uploading ? 'Güncelleniyor...' : 'Profili Güncelle'}
+            onPress={() => updateProfileData({ username, website, avatar_url: avatarUrl })}
+            disabled={loading || uploading}
+            buttonStyle={styles.updateButton}
+            containerStyle={styles.buttonContainer}
+            icon={<Icon name='checkmark-circle-outline' type='ionicon' color='white' size={20} style={{ marginRight: 8 }}/>}
+          />
+        </Card>
+
+        <Card containerStyle={styles.cardContainer}> 
+          <Text style={styles.menuTitle}>Uygulama</Text>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity 
+              key={index} 
+              style={styles.menuItem} 
+              onPress={() => navigation.navigate(item.screen)}
+            >
+              <Icon name={item.icon} type='ionicon' size={24} color='#007AFF' />
+              <Text style={styles.menuItemText}>{item.title}</Text>
+              <Icon name='chevron-forward-outline' type='ionicon' size={22} color='#C7C7CC' />
+            </TouchableOpacity>
+          ))}
+        </Card>
+
+        <Button
+          title="Çıkış Yap"
+          onPress={() => supabase.auth.signOut()}
+          buttonStyle={styles.signOutButton}
+          containerStyle={styles.buttonContainer}
+          disabled={uploading}
+          icon={<Icon name='log-out-outline' type='ionicon' color='white' size={20} style={{ marginRight: 8 }}/>}
+        />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F0F4F8',
+  },
+  scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+    paddingHorizontal: 10,
+    paddingBottom: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+    backgroundColor: '#F0F4F8',
   },
-  avatarContainer: {
+  cardContainer: {
+    width: '100%',
+    borderRadius: 12,
+    padding: 15,
+    marginTop: 20,
+    marginBottom: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  avatarSection: {
     alignItems: 'center',
-    marginBottom: 30,
-    position: 'relative',
+    marginBottom: 15,
   },
   avatar: {
-    backgroundColor: '#cccccc',
-    borderWidth: 3,
-    borderColor: '#0066CC', // Yeni birincil mavi
+    backgroundColor: '#C5E1A5',
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  avatarAccessory: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 2,
   },
   uploadIndicator: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
+    bottom: 0,
+    right: '40%',
   },
   emailText: {
-    marginBottom: 20,
-    color: '#555',
     fontSize: 16,
+    color: '#607D8B',
+    textAlign: 'center',
+    marginBottom: 20,
   },
   inputContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderBottomWidth: 0, // Remove default underline for a cleaner look with borderRadius
-    paddingHorizontal: 10,
-    marginBottom: 15, // Space between inputs
-    elevation: 2, // Android shadow
-    shadowColor: '#000', // iOS shadow
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
+    borderBottomWidth: 1,
+    borderColor: '#DCE4E8',
+    paddingHorizontal: 5,
+    marginBottom: 5,
   },
   label: {
-    color: '#0066CC', // Yeni birincil mavi
+    fontSize: 14,
+    color: '#34495E',
     fontWeight: '600',
-    marginBottom: 5,
-    marginLeft: 5,
+    marginBottom: 4,
   },
   buttonContainer: {
-    width: '100%',
-    marginTop: 10,
+    width: '90%',
+    alignSelf: 'center',
+    marginTop: 20,
+    marginBottom: 10,
   },
-  button: {
-    backgroundColor: '#0066CC', // Yeni birincil mavi
-    borderRadius: 10,
+  updateButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 25,
     paddingVertical: 12,
   },
   signOutButton: {
-    backgroundColor: '#dc3545',
+    backgroundColor: '#FF3B30',
+    borderRadius: 25,
+    paddingVertical: 12,
+  },
+  menuTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+    paddingHorizontal: 5,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFF2F5',
+  },
+  menuItemText: {
+    flex: 1,
+    marginLeft: 15,
+    fontSize: 16,
+    color: '#333',
   },
 });

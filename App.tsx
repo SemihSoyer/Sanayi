@@ -9,6 +9,10 @@ import ProfileScreen from './screens/ProfileScreen';
 import BusinessDashboardScreen from './screens/BusinessDashboardScreen';
 import MyBusinessScreen from './screens/MyBusinessScreen'; // İşyerim ekranını import et
 import BusinessDetailScreen from './screens/BusinessDetailScreen'; // Yeni eklendi
+import SettingsScreen from './screens/SettingsScreen'; // Yeni eklendi
+import ContactUsScreen from './screens/ContactUsScreen'; // Yeni eklendi
+import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen'; // Yeni eklendi
+import TermsOfServiceScreen from './screens/TermsOfServiceScreen'; // Yeni eklendi
 import { GestureHandlerRootView } from 'react-native-gesture-handler'; // Yeni eklendi
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -23,6 +27,10 @@ export type RootStackParamList = {
   BusinessAuth: undefined;
   App: { session: Session; userProfile: UserProfile | null }; // App ekranına parametreler
   BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
+  Settings: undefined; // Yeni eklendi
+  ContactUs: undefined; // Yeni eklendi
+  PrivacyPolicy: undefined; // Yeni eklendi
+  TermsOfService: undefined; // Yeni eklendi
 };
 
 // Kullanıcı profili için bir arayüz tanımlayalım
@@ -216,6 +224,26 @@ export default function App() {
               name="BusinessDetail" 
               component={BusinessDetailScreen} 
               options={{ headerShown: true, title: 'İşletme Detayları' }} // Başlık eklendi
+            />
+            <Stack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ headerShown: true, title: 'Ayarlar' }}
+            />
+            <Stack.Screen
+                name="ContactUs"
+                component={ContactUsScreen}
+                options={{ headerShown: true, title: 'Bize Ulaşın' }}
+            />
+            <Stack.Screen
+                name="PrivacyPolicy"
+                component={PrivacyPolicyScreen}
+                options={{ headerShown: true, title: 'Gizlilik Politikası' }}
+            />
+            <Stack.Screen
+                name="TermsOfService"
+                component={TermsOfServiceScreen}
+                options={{ headerShown: true, title: 'Hizmet Koşulları' }}
             />
           </>
         ) : (
