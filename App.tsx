@@ -13,6 +13,10 @@ import SettingsScreen from './screens/SettingsScreen'; // Yeni eklendi
 import ContactUsScreen from './screens/ContactUsScreen'; // Yeni eklendi
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen'; // Yeni eklendi
 import TermsOfServiceScreen from './screens/TermsOfServiceScreen'; // Yeni eklendi
+import AppointmentListScreen from './screens/AppointmentListScreen'; // Randevu Listesi
+import CreateAppointmentScreen from './screens/CreateAppointmentScreen'; // Randevu Oluştur
+import AppointmentDetailScreen from './screens/AppointmentDetailScreen'; // Randevu Detay
+import BusinessAvailabilityScreen from './screens/BusinessAvailabilityScreen'; // İşletme Müsaitlik Takvimi
 import { GestureHandlerRootView } from 'react-native-gesture-handler'; // Yeni eklendi
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -31,6 +35,10 @@ export type RootStackParamList = {
   ContactUs: undefined; // Yeni eklendi
   PrivacyPolicy: undefined; // Yeni eklendi
   TermsOfService: undefined; // Yeni eklendi
+  AppointmentList: undefined; // Randevu Listesi
+  CreateAppointment: { preSelectedBusinessId?: string }; // Randevu Oluştur - önceden seçili işletme ID'si
+  AppointmentDetail: { appointmentId: string }; // Randevu Detay
+  BusinessAvailability: undefined; // İşletme Müsaitlik Takvimi
 };
 
 // Kullanıcı profili için bir arayüz tanımlayalım
@@ -83,9 +91,11 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
       iconName = 'home-variant'; // Farklı bir ana sayfa ikonu
     } else if (routeName === 'Harita') {
       iconName = 'map-marker-radius'; // Farklı bir harita ikonu
+    } else if (routeName === 'Randevularım' || routeName === 'Randevular') {
+      iconName = 'calendar-clock'; // Randevu ikonu
     }
 
-    return <Icon name={iconName} type="material-community" color={iconColor} size={iconSize} />;
+          return <Icon name={iconName} type="material-community" color={iconColor} size={iconSize} />;
   };
 
   if (userProfile?.role === 'business_owner') {
@@ -96,6 +106,13 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
           component={BusinessDashboardScreen} 
           options={{
             tabBarIcon: ({ focused, color, size }) => getTabBarIcon("İşletme Paneli", focused, color, size),
+          }}
+        />
+        <Tab.Screen 
+          name="Randevular" 
+          component={AppointmentListScreen} 
+          options={{
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Randevular", focused, color, size),
           }}
         />
         <Tab.Screen 
@@ -131,6 +148,13 @@ function AppTabs({ route }: { route: { params: { session: Session; userProfile: 
         component={MapScreen} 
         options={{
             tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Harita", focused, color, size),
+        }}
+      />
+      <Tab.Screen 
+        name="Randevularım" 
+        component={AppointmentListScreen} 
+        options={{
+            tabBarIcon: ({ focused, color, size }) => getTabBarIcon("Randevularım", focused, color, size),
         }}
       />
       <Tab.Screen 
@@ -244,6 +268,26 @@ export default function App() {
                 name="TermsOfService"
                 component={TermsOfServiceScreen}
                 options={{ headerShown: true, title: 'Hizmet Koşulları' }}
+            />
+            <Stack.Screen
+                name="AppointmentList"
+                component={AppointmentListScreen}
+                options={{ headerShown: true, title: 'Randevular' }}
+            />
+            <Stack.Screen
+                name="CreateAppointment"
+                component={CreateAppointmentScreen}
+                options={{ headerShown: true, title: 'Yeni Randevu' }}
+            />
+            <Stack.Screen
+                name="AppointmentDetail"
+                component={AppointmentDetailScreen}
+                options={{ headerShown: true, title: 'Randevu Detayı' }}
+            />
+            <Stack.Screen
+                name="BusinessAvailability"
+                component={BusinessAvailabilityScreen}
+                options={{ headerShown: true, title: 'Müsaitlik Takvimi' }}
             />
           </>
         ) : (

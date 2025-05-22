@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, Alert, ActivityIndicator, Image, Touchabl
 import { Text, Input, Button, Icon, Card, CheckBox } from '@rneui/themed'; // CheckBox eklendi
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps'; // PROVIDER_DEFAULT eklendi
 import { supabase } from '../lib/supabase';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
 // BusinessDetails arayüzünden id çıkarıldı, owner_id PK olacak.
@@ -31,6 +31,7 @@ interface City { // Yeni eklendi: Şehir arayüzü
 }
 
 const MyBusinessScreen = () => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -784,6 +785,14 @@ const MyBusinessScreen = () => {
           titleStyle={styles.actionButtonTitle}
           containerStyle={styles.actionButtonContainer}
         />
+        <Button
+          title="Müsaitlik Takvimi"
+          onPress={() => navigation.navigate('BusinessAvailability' as never)}
+          buttonStyle={[styles.actionButton, styles.calendarButton]}
+          icon={<Icon name="calendar-outline" type="ionicon" color="white" size={20} style={{marginRight: 8}}/>}
+          titleStyle={styles.actionButtonTitle}
+          containerStyle={styles.actionButtonContainer}
+        />
       </Card>
     );
   };
@@ -919,6 +928,9 @@ const styles = StyleSheet.create({
   },
   editInfoButton: {
     backgroundColor: '#1E88E5', 
+  },
+  calendarButton: {
+    backgroundColor: '#FF9800', 
   },
   editFormContainer: {
     flex: 1,

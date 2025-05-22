@@ -10,6 +10,7 @@ import { StackNavigationProp } from '@react-navigation/stack'; // StackNavigatio
 // App.tsx'deki RootStackParamList'e göre güncellenecek
 type RootStackParamList = {
   BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
+  CreateAppointment: { preSelectedBusinessId?: string }; // Randevu Oluştur - önceden seçili işletme ID'si
   // Diğer ekranlarınız...
 };
 
@@ -390,7 +391,7 @@ const BusinessDetailScreen = () => {
       <View style={styles.floatingButtonContainer}>
         <TouchableOpacity 
           style={styles.appointmentButton}
-          onPress={() => Alert.alert('Randevu', 'Randevu alma özelliği yakında eklenecek!')}
+          onPress={() => navigation.navigate('CreateAppointment', { preSelectedBusinessId: businessId })}
           activeOpacity={0.8}
         >
           <Icon name="calendar" type="ionicon" size={24} color="#FFFFFF" style={styles.appointmentIcon} />
