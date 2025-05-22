@@ -226,6 +226,62 @@ const HomeScreen = () => {
     );
   };
 
+  const handleChipPress = (serviceTypeId: string) => {
+    handleServiceTypeToggle(serviceTypeId);
+    // Direkt filtrelemeyi tetikle
+    setTimeout(() => {
+      applyFilters();
+    }, 100);
+  };
+
+  const renderServiceTypeChips = () => {
+    if (serviceTypes.length === 0) return null;
+
+    return (
+      <View style={styles.chipsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsScrollContent}
+          contentInsetAdjustmentBehavior="automatic"
+        >
+          {serviceTypes.map((serviceType, index) => {
+            const isSelected = selectedServiceTypeIds.includes(serviceType.id);
+            const isLastItem = index === serviceTypes.length - 1;
+            return (
+              <TouchableOpacity
+                key={serviceType.id}
+                style={[
+                  styles.chip,
+                  isSelected && styles.chipSelected,
+                  isLastItem && styles.lastChip
+                ]}
+                onPress={() => handleChipPress(serviceType.id)}
+                disabled={loadingBusinesses || loadingServiceTypes || loadingCities}
+              >
+                <Text style={[
+                  styles.chipText,
+                  isSelected && styles.chipTextSelected
+                ]}>
+                  {serviceType.name}
+                </Text>
+                {isSelected && (
+                  <Icon 
+                    name="checkmark" 
+                    type="ionicon" 
+                    size={16} 
+                    color="#FFFFFF" 
+                    style={styles.chipIcon}
+                  />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
   const renderBusinessItem = ({
     item,
     index,
@@ -246,22 +302,9 @@ const HomeScreen = () => {
   };
 
   const renderListHeader = () => (
-    <View style={styles.headerOuterContainer}>
-      <Text style={styles.headerTitleText}>Yakındaki Tamirciler</Text>
-      <View style={styles.headerButtonsContainer}>
-        <Button
-          type="clear"
-          icon={<Icon name={isGridView ? "list-outline" : "apps-outline"} type="ionicon" color="#007AFF" size={24} />}
-          onPress={toggleViewMode}
-          containerStyle={styles.headerButton}
-        />
-        <Button
-          type="clear"
-          icon={<Icon name="filter-outline" type="ionicon" color="#007AFF" size={24} />}
-          onPress={() => setFilterModalVisible(true)}
-          containerStyle={styles.headerButton}
-        />
-      </View>
+    <View>
+      {/* Service Type Chips */}
+      {renderServiceTypeChips()}
     </View>
   );
 
@@ -287,97 +330,122 @@ const HomeScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={filterModalVisible}
-        onRequestClose={() => setFilterModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Filtreleme Seçenekleri</Text>
-            
-            {/* Şehir Filtresi */}
-            <Text style={styles.modalSubtitle}>Şehir Seçimi</Text>
-            {loadingCities ? (
-              <ActivityIndicator size="small" color="#0066CC" style={{ marginVertical: 10 }} />
-            ) : (
-              <ScrollView style={[styles.modalScrollView, {maxHeight: Dimensions.get('window').height * 0.2}]} horizontal>
-                <TouchableOpacity
-                  style={[styles.cityChip, !selectedCityId && styles.cityChipSelected]}
-                  onPress={() => setSelectedCityId(null)}
-                >
-                  <Text style={[styles.cityChipText, !selectedCityId && styles.cityChipTextSelected]}>Tümü</Text>
-                </TouchableOpacity>
-                {cities.map((city) => (
-                  <TouchableOpacity
-                    key={city.id}
-                    style={[styles.cityChip, selectedCityId === city.id && styles.cityChipSelected]}
-                    onPress={() => setSelectedCityId(city.id)}
-                  >
-                    <Text style={[styles.cityChipText, selectedCityId === city.id && styles.cityChipTextSelected]}>{city.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-            
-            {/* Hizmet Türü Filtresi */}
-            <Text style={styles.modalSubtitle}>Hizmet Türü</Text>
-            <ScrollView style={styles.modalScrollView}>
-              {serviceTypes.map((service) => (
-                <CheckBox
-                  key={service.id}
-                  title={service.name}
-                  checked={selectedServiceTypeIds.includes(service.id)}
-                  onPress={() => handleServiceTypeToggle(service.id)}
-                  containerStyle={styles.checkboxContainerModal}
-                  textStyle={styles.checkboxTextModal}
-                  checkedColor="#0066CC"
-                  uncheckedColor="#34495E"
-                />
-              ))}
-            </ScrollView>
-            <View style={styles.modalButtonContainer}>
-              <Button 
-                title="Temizle"
-                onPress={clearFilters}
-                type="outline" 
-                buttonStyle={styles.modalButton} 
-                titleStyle={styles.modalButtonTextClear}
-              />
-              <Button 
-                title="Uygula"
-                onPress={applyFilters}
-                buttonStyle={[styles.modalButton, styles.modalButtonApply]} 
-                titleStyle={styles.modalButtonTextApply}
-              />
-            </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      
+      {/* Fixed Header */}
+      <SafeAreaView style={styles.headerSafeArea}>
+        <View style={styles.headerOuterContainer}>
+          <Text style={styles.headerTitleText}>Yakındaki Tamirciler</Text>
+          <View style={styles.headerButtonsContainer}>
+            <Button
+              type="clear"
+              icon={<Icon name={isGridView ? "list-outline" : "apps-outline"} type="ionicon" color="#007AFF" size={24} />}
+              onPress={toggleViewMode}
+              containerStyle={styles.headerButton}
+            />
+            <Button
+              type="clear"
+              icon={<Icon name="filter-outline" type="ionicon" color="#007AFF" size={24} />}
+              onPress={() => setFilterModalVisible(true)}
+              containerStyle={styles.headerButton}
+            />
           </View>
         </View>
-      </Modal>
+      </SafeAreaView>
 
-      <FlatList
-        data={filteredBusinesses}
-        renderItem={renderBusinessItem}
-        keyExtractor={(item) => isGridView ? `grid-${item.id}` : `list-${item.id}`}
-        numColumns={numColumns}
-        key={isGridView ? (screenWidth < 380 ? 'SMALL-GRID' : 'GRID') : 'LIST'}
-        contentContainerStyle={isGridView ? styles.gridContainer : styles.listContainer}
-        ListHeaderComponent={renderListHeader}
-        ListEmptyComponent={
-          <View style={styles.centeredEmptyList}>
-            <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
-            <Text style={styles.emptyText}>
-              {selectedCityId || selectedServiceTypeIds.length > 0 ? 
-                "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : 
-                (allBusinesses.length === 0 && !loadingBusinesses ? "Henüz hiç işletme eklenmemiş. Keşfedilecek yerler yakında! 🚀" : "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀")}
-            </Text>
+      {/* Main Content */}
+      <View style={styles.contentContainer}>
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={filterModalVisible}
+          onRequestClose={() => setFilterModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Filtreleme Seçenekleri</Text>
+              
+              {/* Şehir Filtresi */}
+              <Text style={styles.modalSubtitle}>Şehir Seçimi</Text>
+              {loadingCities ? (
+                <ActivityIndicator size="small" color="#0066CC" style={{ marginVertical: 10 }} />
+              ) : (
+                <ScrollView style={[styles.modalScrollView, {maxHeight: Dimensions.get('window').height * 0.2}]} horizontal>
+                  <TouchableOpacity
+                    style={[styles.cityChip, !selectedCityId && styles.cityChipSelected]}
+                    onPress={() => setSelectedCityId(null)}
+                  >
+                    <Text style={[styles.cityChipText, !selectedCityId && styles.cityChipTextSelected]}>Tümü</Text>
+                  </TouchableOpacity>
+                  {cities.map((city) => (
+                    <TouchableOpacity
+                      key={city.id}
+                      style={[styles.cityChip, selectedCityId === city.id && styles.cityChipSelected]}
+                      onPress={() => setSelectedCityId(city.id)}
+                    >
+                      <Text style={[styles.cityChipText, selectedCityId === city.id && styles.cityChipTextSelected]}>{city.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+              
+              {/* Hizmet Türü Filtresi */}
+              <Text style={styles.modalSubtitle}>Hizmet Türü</Text>
+              <ScrollView style={styles.modalScrollView}>
+                {serviceTypes.map((service) => (
+                  <CheckBox
+                    key={service.id}
+                    title={service.name}
+                    checked={selectedServiceTypeIds.includes(service.id)}
+                    onPress={() => handleServiceTypeToggle(service.id)}
+                    containerStyle={styles.checkboxContainerModal}
+                    textStyle={styles.checkboxTextModal}
+                    checkedColor="#0066CC"
+                    uncheckedColor="#34495E"
+                  />
+                ))}
+              </ScrollView>
+              <View style={styles.modalButtonContainer}>
+                <Button 
+                  title="Temizle"
+                  onPress={clearFilters}
+                  type="outline" 
+                  buttonStyle={styles.modalButton} 
+                  titleStyle={styles.modalButtonTextClear}
+                />
+                <Button 
+                  title="Uygula"
+                  onPress={applyFilters}
+                  buttonStyle={[styles.modalButton, styles.modalButtonApply]} 
+                  titleStyle={styles.modalButtonTextApply}
+                />
+              </View>
+            </View>
           </View>
-        }
-      />
-    </SafeAreaView>
+        </Modal>
+
+        <FlatList
+          data={filteredBusinesses}
+          renderItem={renderBusinessItem}
+          keyExtractor={(item) => isGridView ? `grid-${item.id}` : `list-${item.id}`}
+          numColumns={numColumns}
+          key={isGridView ? (screenWidth < 380 ? 'SMALL-GRID' : 'GRID') : 'LIST'}
+          contentContainerStyle={isGridView ? styles.gridContainer : styles.listContainer}
+          ListHeaderComponent={renderListHeader}
+          ListEmptyComponent={
+            <View style={styles.centeredEmptyList}>
+              <Icon name="compass-outline" type="material-community" size={60} color="#77AADD" />
+              <Text style={styles.emptyText}>
+                {selectedCityId || selectedServiceTypeIds.length > 0 ? 
+                  "Aradığın kriterlere uygun bir yer bulamadık. Farklı filtreler denemeye ne dersin? 😊" : 
+                  (allBusinesses.length === 0 && !loadingBusinesses ? "Henüz hiç işletme eklenmemiş. Keşfedilecek yerler yakında! 🚀" : "Civarda keşfedilecek yeni yerler yakında eklenecek! 🚀")}
+              </Text>
+            </View>
+          }
+        />
+      </View>
+    </View>
   );
 };
 
@@ -423,13 +491,21 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: GLOBAL_SPACING, // Izgara için üst boşluk
   },
+  headerSafeArea: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 10,
+  },
   headerOuterContainer: { 
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 10,
-    paddingBottom: 12,
-    backgroundColor: '#E0F7FA',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    paddingTop: 10,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -437,7 +513,7 @@ const styles = StyleSheet.create({
   headerTitleText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: '#0066CC',
   },
   headerButtonsContainer: {
     flexDirection: 'row',
@@ -552,6 +628,55 @@ const styles = StyleSheet.create({
   cityChipTextSelected: {
     color: 'white',
     fontWeight: '600',
+  },
+  chipsContainer: {
+    paddingHorizontal: 0,
+    paddingVertical: 12,
+    marginTop: 8,
+    backgroundColor: '#E0F7FA', // HomeScreen arka planıyla aynı
+  },
+  chipsScrollContent: {
+    paddingHorizontal: 16,
+    paddingRight: 16,
+    flexGrow: 1,
+  },
+  chip: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  chipSelected: {
+    backgroundColor: '#0066CC',
+    borderColor: '#0066CC',
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  chipTextSelected: {
+    color: '#FFFFFF',
+  },
+  chipIcon: {
+    marginLeft: 6,
+  },
+  lastChip: {
+    marginRight: 0,
+  },
+  contentContainer: {
+    flex: 1,
+    backgroundColor: '#E0F7FA',
   },
 });
 
