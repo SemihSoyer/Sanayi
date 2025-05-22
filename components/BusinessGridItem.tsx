@@ -20,6 +20,8 @@ interface BusinessGridItemProps {
 
 const BusinessGridItem: React.FC<BusinessGridItemProps> = ({ item, itemWidth, isLastInRow }) => {
   const navigation = useNavigation<NavigationProp>();
+  const screenWidth = Dimensions.get('window').width;
+  const isSmallScreen = screenWidth < 380;
 
   return (
     <TouchableOpacity
@@ -27,7 +29,7 @@ const BusinessGridItem: React.FC<BusinessGridItemProps> = ({ item, itemWidth, is
         styles.container,
         { width: itemWidth },
         // Sağdaki eleman için sağ marjı kaldır
-        isLastInRow ? {} : { marginRight: styles.container.marginRight } 
+        isLastInRow ? {} : { marginRight: 12 } 
       ]}
       onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
     >
@@ -45,25 +47,31 @@ const BusinessGridItem: React.FC<BusinessGridItemProps> = ({ item, itemWidth, is
         </TouchableOpacity>
       </View>
 
-      <View style={styles.infoContainer}>
-        <Text style={styles.name} numberOfLines={2}>{item.name || 'İşletme Adı'}</Text>
+      <View style={[styles.infoContainer, isSmallScreen && styles.infoContainerSmall]}>
+        <Text style={[styles.name, isSmallScreen && styles.nameSmall]} numberOfLines={2}>{item.name || 'İşletme Adı'}</Text>
 
         {/* İşletme Hizmetleri */}
         {item.services && item.services.length > 0 && (
           <View style={styles.servicesContainer}>
-            {item.services.slice(0, 2).map((service, index) => ( // İlk 2 hizmeti göster
-              <View key={index} style={styles.serviceTag}>
-                <Icon name="checkmark-circle-outline" type="ionicon" size={13} color="#4CAF50" />
-                <Text style={styles.serviceTagText} numberOfLines={1}>{service.name}</Text>
+            {item.services.slice(0, isSmallScreen ? 1 : 2).map((service, index) => ( // Küçük ekranda sadece 1, normal ekranda 2 hizmet
+              <View key={index} style={[styles.serviceTag, isSmallScreen && styles.serviceTagSmall]}>
+                <Icon name="checkmark-circle-outline" type="ionicon" size={isSmallScreen ? 11 : 13} color="#4CAF50" />
+                <Text style={[styles.serviceTagText, isSmallScreen && styles.serviceTagTextSmall]} numberOfLines={1}>{service.name}</Text>
               </View>
             ))}
-            {item.services.length > 2 && (
-              <Text style={styles.moreServicesText}>+ {item.services.length - 2} daha</Text>
+            {item.services.length > (isSmallScreen ? 1 : 2) && (
+              <Text style={[styles.moreServicesText, isSmallScreen && styles.moreServicesTextSmall]}>
+                + {item.services.length - (isSmallScreen ? 1 : 2)} daha
+              </Text>
             )}
           </View>
         )}
 
-        {item.city_name && <Text style={styles.location} numberOfLines={1}>{item.address ? `${item.address}, ${item.city_name}` : item.city_name}</Text>}
+        {item.city_name && (
+          <Text style={[styles.location, isSmallScreen && styles.locationSmall]} numberOfLines={1}>
+            {item.address ? `${item.address}, ${item.city_name}` : item.city_name}
+          </Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -79,9 +87,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 }, // Gölge ayarlandı
     shadowOpacity: 0.15, // Gölge ayarlandı
     shadowRadius: 3.5, // Gölge ayarlandı
-    marginRight: 12, // Boşluk ayarlandı
-    // itemWidth HomeScreen'den geliyor, padding/margin ile genel genişliği etkileyecek
-    // Kartı biraz büyütmek için infoContainer padding'ini ve resim yüksekliğini ayarlayacağız
+    marginBottom: 12, // Alt boşluk eklendi
   },
   imageContainer: {
     width: '100%',
@@ -111,12 +117,20 @@ const styles = StyleSheet.create({
   infoContainer: {
     padding: 12, // Padding biraz artırıldı
   },
+  infoContainerSmall: {
+    padding: 8, // Küçük ekranda daha az padding
+  },
   name: {
     fontSize: 16, // Boyut biraz daha artırıldı
     fontWeight: 'bold', // Daha belirgin
     color: '#333',
     marginBottom: 6,
     lineHeight: 22,
+  },
+  nameSmall: {
+    fontSize: 14,
+    marginBottom: 4,
+    lineHeight: 18,
   },
   servicesContainer: {
     flexDirection: 'row',
@@ -134,11 +148,22 @@ const styles = StyleSheet.create({
     marginRight: 6,
     marginBottom: 6,
   },
+  serviceTagSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginRight: 4,
+    marginBottom: 4,
+    borderRadius: 8,
+  },
   serviceTagText: {
     fontSize: 11,
     color: '#388E3C', // Koyu yeşil yazı
     marginLeft: 5,
     fontWeight: '500',
+  },
+  serviceTagTextSmall: {
+    fontSize: 10,
+    marginLeft: 3,
   },
   moreServicesText: {
     fontSize: 11,
@@ -147,10 +172,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textDecorationLine: 'underline',
   },
+  moreServicesTextSmall: {
+    fontSize: 10,
+    marginLeft: 2,
+  },
   location: {
     fontSize: 13, // Boyut artırıldı
     color: '#666',
     marginTop: 4,
+  },
+  locationSmall: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });
 

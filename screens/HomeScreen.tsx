@@ -39,10 +39,9 @@ type Business = {
   services?: { name: string }[]; // İşletmenin sunduğu hizmetler için eklendi
 };
 
+// Global spacing değeri
+const GLOBAL_SPACING = 12;
 const screenWidth = Dimensions.get('window').width;
-const numColumns = 2;
-const spacing = 10;
-const itemWidth = (screenWidth - spacing * (numColumns + 1)) / numColumns;
 
 const HomeScreen = () => {
   const [allBusinesses, setAllBusinesses] = useState<ListedBusiness[]>([]);
@@ -60,6 +59,22 @@ const HomeScreen = () => {
   const [isGridView, setIsGridView] = useState(false); // Görünüm modu için state
 
   const navigation = useNavigation<HomeScreenNavigationProp>();
+
+  // Ekran genişliğine göre dinamik sütun sayısı
+  const getNumColumns = () => isGridView ? (screenWidth < 380 ? 1 : 2) : 1;
+  const numColumns = getNumColumns();
+
+  // Genişlik hesaplanması - responsive olarak
+  const calculateItemWidth = () => {
+    if (!isGridView || screenWidth < 380) {
+      // Tek sütun için
+      return screenWidth - (GLOBAL_SPACING * 2);
+    } else {
+      // İki sütun grid için
+      return (screenWidth - (GLOBAL_SPACING * 3)) / 2;
+    }
+  };
+  const itemWidth = calculateItemWidth();
 
   const fetchData = useCallback(async () => {
     setLoadingBusinesses(true);
@@ -102,7 +117,7 @@ const HomeScreen = () => {
       if (businessesError) throw businessesError;
       
       const processedBusinesses = businessesData?.map(business => {
-        const cityInfo = business.city as { name: string }[] | null; 
+        const cityInfo = business.city as { name: string }[] | null;
         
         // Gelen BusinessServices yapısı: { ServiceTypes: { name: string } }[] şeklinde olmalı
         // Veya { service_type_id: string, ServiceTypes: { name: string } }[] şeklinde
@@ -347,8 +362,8 @@ const HomeScreen = () => {
         data={filteredBusinesses}
         renderItem={renderBusinessItem}
         keyExtractor={(item) => isGridView ? `grid-${item.id}` : `list-${item.id}`}
-        numColumns={isGridView ? numColumns : 1}
-        key={isGridView ? 'GRID' : 'LIST'}
+        numColumns={numColumns}
+        key={isGridView ? (screenWidth < 380 ? 'SMALL-GRID' : 'GRID') : 'LIST'}
         contentContainerStyle={isGridView ? styles.gridContainer : styles.listContainer}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={
@@ -367,7 +382,7 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  container: { 
     flex: 1,
     backgroundColor: '#E0F7FA', // Açık mavi arka plan
   },
@@ -401,13 +416,14 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingBottom: 20,
+    paddingHorizontal: GLOBAL_SPACING,
   },
   gridContainer: {
-    paddingHorizontal: spacing / 2,
+    paddingHorizontal: GLOBAL_SPACING,
     paddingBottom: 20,
-    paddingTop: spacing, // Izgara için üst boşluk
+    paddingTop: GLOBAL_SPACING, // Izgara için üst boşluk
   },
-  headerOuterContainer: {
+  headerOuterContainer: { 
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 10 : 10,
     paddingBottom: 12,
@@ -470,7 +486,7 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
   },
   modalScrollView: {
-    maxHeight: Dimensions.get('window').height * 0.5,
+    maxHeight: Dimensions.get('window').height * 0.5, 
     marginBottom: 15,
   },
   checkboxContainerModal: {

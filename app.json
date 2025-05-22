@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "api key"
-      }
+      },
+      "bundleIdentifier": "com.semihsoyer.expousermanagement"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +28,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyAtKbT60EmOmge4oIx_518JNLMOIIHktk0"
         }
-      }
+      },
+      "package": "com.semihsoyer.expousermanagement"
     },
     "web": {
       "favicon": "./assets/favicon.png"

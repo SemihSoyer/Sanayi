@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Platform, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Platform, TouchableOpacity, SafeAreaView } from 'react-native';
 import { Button, CheckBox, Icon } from '@rneui/themed';
 import MapView, { Marker, MapStyleElement } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -70,6 +70,7 @@ interface ServiceType {
 
 const MapScreen = () => {
   const navigation = useNavigation<MapScreenNavigationProp>();
+  const mapRef = useRef<MapView>(null);
   const {
     location,
     filteredMapBusinesses,
@@ -87,6 +88,19 @@ const MapScreen = () => {
   } = useMapScreenData();
 
   const [selectedBusiness, setSelectedBusiness] = useState<MapBusiness | null>(null);
+  const [currentRegion, setCurrentRegion] = useState<any>(null);
+
+  // Initial region'ı currentRegion olarak set et
+  React.useEffect(() => {
+    if (location && !currentRegion) {
+      setCurrentRegion({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
+      });
+    }
+  }, [location, currentRegion]);
 
   useFocusEffect(
     useCallback(() => {
@@ -115,6 +129,131 @@ const MapScreen = () => {
       setSelectedBusiness(null);
     }
   };
+
+  const handleChipPress = (serviceTypeId: string) => {
+    handleServiceTypeToggle(serviceTypeId);
+    // Direkt filtrelemeyi tetikle
+    setTimeout(() => {
+      triggerApplyFilters();
+    }, 100);
+  };
+
+  const handleZoomIn = () => {
+    if (mapRef.current && currentRegion) {
+      const newRegion = {
+        ...currentRegion,
+        latitudeDelta: currentRegion.latitudeDelta * 0.5,
+        longitudeDelta: currentRegion.longitudeDelta * 0.5,
+      };
+      mapRef.current.animateToRegion(newRegion, 300);
+      setCurrentRegion(newRegion);
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (mapRef.current && currentRegion) {
+      const newRegion = {
+        ...currentRegion,
+        latitudeDelta: Math.min(currentRegion.latitudeDelta * 2, 10),
+        longitudeDelta: Math.min(currentRegion.longitudeDelta * 2, 10),
+      };
+      mapRef.current.animateToRegion(newRegion, 300);
+      setCurrentRegion(newRegion);
+    }
+  };
+
+  const handleCenterToUser = () => {
+    if (location && mapRef.current) {
+      const newRegion = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      mapRef.current.animateToRegion(newRegion, 500);
+      setCurrentRegion(newRegion);
+    }
+  };
+
+  const handleRegionChangeComplete = (region: any) => {
+    setCurrentRegion(region);
+  };
+
+  const renderServiceTypeChips = () => {
+    if (serviceTypes.length === 0) return null;
+
+    return (
+      <View style={styles.chipsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsScrollContent}
+        >
+          {serviceTypes.map((serviceType) => {
+            const isSelected = selectedServiceTypeIds.includes(serviceType.id);
+            return (
+              <TouchableOpacity
+                key={serviceType.id}
+                style={[
+                  styles.chip,
+                  isSelected && styles.chipSelected
+                ]}
+                onPress={() => handleChipPress(serviceType.id)}
+                disabled={loadingData || loadingLocation}
+              >
+                <Text style={[
+                  styles.chipText,
+                  isSelected && styles.chipTextSelected
+                ]}>
+                  {serviceType.name}
+                </Text>
+                {isSelected && (
+                  <Icon 
+                    name="checkmark" 
+                    type="ionicon" 
+                    size={16} 
+                    color="#FFFFFF" 
+                    style={styles.chipIcon}
+                  />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderMapControls = () => (
+    <View style={styles.mapControlsContainer}>
+      {/* Kullanıcı konumuna odaklan */}
+      <TouchableOpacity
+        style={[styles.controlButton, styles.locationButton]}
+        onPress={handleCenterToUser}
+        disabled={!location}
+      >
+        <Icon name="locate" type="ionicon" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+      
+      {/* Zoom In */}
+      <TouchableOpacity
+        style={styles.controlButton}
+        onPress={handleZoomIn}
+        disabled={!currentRegion}
+      >
+        <Icon name="add" type="ionicon" size={24} color="#0066CC" />
+      </TouchableOpacity>
+      
+      {/* Zoom Out */}
+      <TouchableOpacity
+        style={styles.controlButton}
+        onPress={handleZoomOut}
+        disabled={!currentRegion}
+      >
+        <Icon name="remove" type="ionicon" size={24} color="#0066CC" />
+      </TouchableOpacity>
+    </View>
+  );
 
   if (loadingLocation) {
     return (
@@ -158,7 +297,13 @@ const MapScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Service Type Chips */}
+      <SafeAreaView style={styles.topSafeArea}>
+        {renderServiceTypeChips()}
+      </SafeAreaView>
+
       <MapView
+        ref={mapRef}
         style={styles.map}
         initialRegion={{
           latitude: location.coords.latitude,
@@ -169,6 +314,7 @@ const MapScreen = () => {
         showsUserLocation={true}
         onPress={handleMapPress}
         showsPointsOfInterest={Platform.OS === 'ios' ? false : true}
+        onRegionChangeComplete={handleRegionChangeComplete}
       >
         {filteredMapBusinesses.map((business) => (
           <Marker
@@ -182,6 +328,9 @@ const MapScreen = () => {
           />
         ))}
       </MapView>
+
+      {/* Map Controls */}
+      {renderMapControls()}
 
       {selectedBusiness && (
         <View style={styles.previewContainer}>
@@ -290,9 +439,9 @@ const styles = StyleSheet.create({
   },
   filterButtonContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 20,
+    top: Platform.OS === 'ios' ? 120 : 80,
     right: 15,
-    zIndex: 10,
+    zIndex: 20,
   },
   filterButton: {
     backgroundColor: '#0066CC',
@@ -378,6 +527,78 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     zIndex: 15,
+  },
+  topSafeArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 15,
+    paddingTop: Platform.OS === 'ios' ? 44 : 24,
+  },
+  chipsContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  chipsScrollContent: {
+    paddingHorizontal: 5,
+  },
+  chip: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  chipSelected: {
+    backgroundColor: '#0066CC',
+    borderColor: '#0066CC',
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  chipTextSelected: {
+    color: '#FFFFFF',
+  },
+  chipIcon: {
+    marginLeft: 6,
+  },
+  mapControlsContainer: {
+    position: 'absolute',
+    bottom: 50,
+    right: 15,
+    zIndex: 20,
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  controlButton: {
+    backgroundColor: '#FFFFFF',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginVertical: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  locationButton: {
+    backgroundColor: '#0066CC',
+    marginBottom: 8,
   },
 });
 
