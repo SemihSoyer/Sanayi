@@ -72,7 +72,15 @@ export default function AppointmentListScreen({ navigation }: any) {
       const { data, error } = await query;
 
       if (error) throw error;
-      setAppointments((data as Appointment[]) || []);
+      
+      // Supabase join sonucunu düzelt
+      const processedData: Appointment[] = (data || []).map((item: any) => ({
+        ...item,
+        business: Array.isArray(item.business) ? item.business[0] || null : item.business,
+        customer: Array.isArray(item.customer) ? item.customer[0] || null : item.customer,
+      }));
+      
+      setAppointments(processedData);
     } catch (error) {
       console.error('Randevular getirilemedi:', error);
       Alert.alert('Hata', 'Randevular getirilemedi');

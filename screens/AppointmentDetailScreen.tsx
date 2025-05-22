@@ -20,10 +20,10 @@ interface AppointmentDetail {
   business: {
     name: string;
     description: string;
-  };
+  } | null;
   customer: {
     full_name: string;
-  };
+  } | null;
 }
 
 export default function AppointmentDetailScreen({ route, navigation }: any) {
@@ -54,7 +54,15 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
         .single();
 
       if (error) throw error;
-      setAppointment(data as AppointmentDetail);
+      
+      // Supabase join sonucunu düzelt
+      const processedData: AppointmentDetail = {
+        ...data,
+        business: Array.isArray(data.business) ? data.business[0] || null : data.business,
+        customer: Array.isArray(data.customer) ? data.customer[0] || null : data.customer,
+      };
+      
+      setAppointment(processedData);
     } catch (error) {
       console.error('Randevu getirilemedi:', error);
       Alert.alert('Hata', 'Randevu bilgileri getirilemedi');
