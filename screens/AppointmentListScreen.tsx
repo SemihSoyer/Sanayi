@@ -7,6 +7,9 @@ import {
   StyleSheet,
   Alert,
   RefreshControl,
+  Image,
+  Linking,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -20,6 +23,8 @@ interface Appointment {
   business: {
     name: string;
     description: string;
+    photos?: string[];
+    address?: string;
   } | null;
   customer: {
     full_name: string;
@@ -48,7 +53,7 @@ export default function AppointmentListScreen({ navigation }: any) {
           appointment_time,
           status,
           notes,
-          business:businesses(name, description),
+          business:businesses(name, description, photos, address),
           customer:profiles!customer_id(full_name)
         `)
         .order('appointment_date', { ascending: false });
@@ -115,35 +120,132 @@ export default function AppointmentListScreen({ navigation }: any) {
     return date.toLocaleDateString('tr-TR');
   };
 
-  const renderAppointmentItem = ({ item }: { item: Appointment }) => (
-    <TouchableOpacity
-      style={styles.appointmentCard}
-      onPress={() => navigation.navigate('AppointmentDetail', { appointmentId: item.id })}
-    >
-      <View style={styles.appointmentHeader}>
-        <Text style={styles.businessName}>
-          {profile?.role === 'customer' 
-            ? item.business?.name || 'İşletme' 
-            : item.customer?.full_name || 'Müşteri'}
-        </Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.appointmentInfo}>
-        <Text style={styles.dateTime}>
-          📅 {formatDate(item.appointment_date)} - ⏰ {item.appointment_time}
-        </Text>
-        {profile?.role === 'customer' && item.business?.description && (
-          <Text style={styles.category}>🏪 {item.business.description}</Text>
-        )}
-        {item.notes && (
-          <Text style={styles.notes} numberOfLines={2}>💬 {item.notes}</Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+  const handleOpenMaps = (address?: string, businessName?: string) => {
+    if (!address) {
+      Alert.alert('Hata', 'İşletme adresi bulunamadı.');
+      return;
+    }
+
+    let mapUrl = '';
+    const encodedAddress = encodeURIComponent(address);
+
+    if (Platform.OS === 'ios') {
+      // Apple Haritalar için: Belirli bir konumu gösterme
+      mapUrl = `maps://?q=${encodedAddress}`;
+      // Alternatif olarak doğrudan yol tarifi için:
+      // mapUrl = `maps://?daddr=${encodedAddress}`;
+    } else { // Android ve diğer platformlar
+      // Google Haritalar için: Belirli bir konumu işaretleyici ve etiket ile gösterme
+      // mapUrl = `geo:0,0?q=${encodedAddress}(${encodeURIComponent(businessName || 'İşletme')})`;
+      // Veya daha önce kullandığımız genel web URL'si (genellikle Google Haritalar'ı açar):
+      mapUrl = `https://maps.google.com/?q=${encodedAddress}`;
+      // Doğrudan navigasyon başlatmak için (Android):
+      // mapUrl = `google.navigation:q=${encodedAddress}`;
+    }
+
+    Linking.canOpenURL(mapUrl).then(supported => {
+      if (supported) {
+        Linking.openURL(mapUrl);
+      } else {
+        // Belki bir web fallback'i veya daha açıklayıcı bir hata mesajı
+        const fallbackMapUrl = `https://maps.google.com/?q=${encodedAddress}`;
+        if (mapUrl !== fallbackMapUrl && Platform.OS === 'ios') { // Eğer Apple Maps URL'i başarısız olduysa Google Maps'i dene
+            Linking.canOpenURL(fallbackMapUrl).then(fallbackSupported => {
+                if(fallbackSupported) Linking.openURL(fallbackMapUrl);
+                else Alert.alert('Hata', 'Harita uygulaması açılamıyor.');
+            });
+        } else {
+            Alert.alert('Hata', 'Harita uygulaması açılamıyor.');
+        }
+      }
+    }).catch(err => {
+      console.error("Harita açma hatası:", err);
+      Alert.alert('Hata', 'Harita açılırken bir sorun oluştu.');
+    });
+  };
+
+  const renderAppointmentItem = ({ item }: { item: Appointment }) => {
+    if (profile?.role === 'customer') {
+      // Müşteri arayüzü için yeni kart tasarımı
+      const coverPhoto = item.business?.photos && item.business.photos.length > 0 
+        ? item.business.photos[0] 
+        : null;
+
+      return (
+        <TouchableOpacity
+          style={styles.customerAppointmentCard}
+          onPress={() => navigation.navigate('AppointmentDetail', { appointmentId: item.id })}
+        >
+          {coverPhoto ? (
+            <Image 
+              source={{ uri: coverPhoto }} 
+              style={styles.businessImage} 
+              resizeMode="cover" 
+            />
+          ) : (
+            <View style={[styles.businessImage, styles.placeholderImage]}>
+              <Text style={styles.placeholderText}>İşletme Fotoğrafı Yok</Text>
+            </View>
+          )}
+          <View style={styles.cardHeader}>
+            <Text style={styles.customerBusinessName} numberOfLines={1}>
+              {item.business?.name || 'İşletme Adı Yok'}
+            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+              <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+            </View>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.appointmentDateTime}>
+              📅 {formatDate(item.appointment_date)} - ⏰ {item.appointment_time}
+            </Text>
+            {item.business?.description && (
+              <Text style={styles.businessCategory} numberOfLines={1}>
+                🏷️ {item.business.description}
+              </Text>
+            )}
+          </View>
+          {item.business?.address && (
+            <TouchableOpacity 
+              style={styles.mapButton}
+              onPress={() => handleOpenMaps(item.business?.address, item.business?.name)}
+            >
+              <Text style={styles.mapButtonText}>📍 Haritada Göster</Text>
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+      );
+    } else {
+      // İşletme sahibi veya diğer roller için mevcut (veya farklı) kart tasarımı
+      // Bu kısım şimdilik aynı kalabilir veya isteğe göre güncellenebilir.
+      return (
+        <TouchableOpacity
+          style={styles.appointmentCard} // Mevcut stil kullanılıyor
+          onPress={() => navigation.navigate('AppointmentDetail', { appointmentId: item.id })}
+        >
+          <View style={styles.appointmentHeader}>
+            <Text style={styles.businessName}>
+              {/* İşletme sahibi için müşteri adı gösterilir */}
+              {item.customer?.full_name || 'Müşteri'}
+            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+              <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.appointmentInfo}>
+            <Text style={styles.dateTime}>
+              📅 {formatDate(item.appointment_date)} - ⏰ {item.appointment_time}
+            </Text>
+            {/* İşletme sahibi için notlar veya başka bilgiler gösterilebilir */}
+            {item.notes && (
+              <Text style={styles.notes} numberOfLines={2}>💬 {item.notes}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+  };
 
   if (loading) {
     return (
@@ -301,5 +403,72 @@ const styles = StyleSheet.create({
     color: '#AAA',
     textAlign: 'center',
     marginTop: 10,
+  },
+  customerAppointmentCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginVertical: 10,
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  businessImage: {
+    width: '100%',
+    height: 150,
+  },
+  placeholderImage: {
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: '#757575',
+    fontSize: 14,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingTop: 10,
+    paddingBottom: 5,
+  },
+  customerBusinessName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    marginRight: 10,
+  },
+  cardBody: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  appointmentDateTime: {
+    fontSize: 15,
+    color: '#555',
+    marginBottom: 5,
+  },
+  businessCategory: {
+    fontSize: 13,
+    color: '#777',
+    fontStyle: 'italic',
+  },
+  mapButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    marginTop: 10,
+  },
+  mapButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '600',
   },
 }); 

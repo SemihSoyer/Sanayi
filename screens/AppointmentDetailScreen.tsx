@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,13 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Image,
+  Linking,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { Icon } from '@rneui/themed';
 
 interface AppointmentDetail {
   id: string;
@@ -20,6 +24,8 @@ interface AppointmentDetail {
   business: {
     name: string;
     description: string;
+    photos?: string[];
+    address?: string;
   } | null;
   customer: {
     full_name: string;
@@ -33,11 +39,16 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: 'Randevu Detayı' });
+  }, [navigation]);
+
   useEffect(() => {
     fetchAppointment();
   }, [appointmentId]);
 
   const fetchAppointment = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('appointments')
@@ -47,7 +58,7 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
           appointment_time,
           status,
           notes,
-          business:businesses(name, description),
+          business:businesses(name, description, photos, address),
           customer:profiles!customer_id(full_name)
         `)
         .eq('id', appointmentId)
@@ -126,6 +137,41 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
     });
   };
 
+  const handleOpenMaps = (address?: string, businessName?: string) => {
+    if (!address) {
+      Alert.alert('Hata', 'İşletme adresi bulunamadı.');
+      return;
+    }
+
+    let mapUrl = '';
+    const encodedAddress = encodeURIComponent(address);
+
+    if (Platform.OS === 'ios') {
+      mapUrl = `maps://?q=${encodedAddress}`;
+    } else {
+      mapUrl = `https://maps.google.com/?q=${encodedAddress}`;
+    }
+
+    Linking.canOpenURL(mapUrl).then(supported => {
+      if (supported) {
+        Linking.openURL(mapUrl);
+      } else {
+        const fallbackMapUrl = `https://maps.google.com/?q=${encodedAddress}`;
+        if (mapUrl !== fallbackMapUrl && Platform.OS === 'ios') {
+            Linking.canOpenURL(fallbackMapUrl).then(fallbackSupported => {
+                if(fallbackSupported) Linking.openURL(fallbackMapUrl);
+                else Alert.alert('Hata', 'Harita uygulaması açılamıyor.');
+            }).catch(() => Alert.alert('Hata', 'Harita uygulaması açılamadı.'));
+        } else {
+            Alert.alert('Hata', 'Harita uygulaması açılamıyor.');
+        }
+      }
+    }).catch(err => {
+      console.error("Harita açma hatası:", err);
+      Alert.alert('Hata', 'Harita açılırken bir sorun oluştu.');
+    });
+  };
+
   const getAvailableActions = () => {
     if (!appointment || !profile) return [];
 
@@ -180,68 +226,108 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
   }
 
   const availableActions = getAvailableActions();
+  const businessPhoto = appointment.business?.photos && appointment.business.photos.length > 0 
+    ? appointment.business.photos[0] 
+    : null;
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.headerBackButton}>← Geri</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Randevu Detayı</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Durum Badge */}
-        <View style={styles.statusContainer}>
+      <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        <View style={styles.statusSection}>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(appointment.status) }]}>
+            <Icon 
+                name={appointment.status === 'approved' ? 'checkmark-circle' : appointment.status === 'cancelled' ? 'close-circle' : appointment.status === 'completed' ? 'check-circle-outline' : 'time-outline'} 
+                type='ionicon' 
+                color='white' 
+                size={18} 
+                style={{marginRight: 8}}
+            />
             <Text style={styles.statusText}>{getStatusText(appointment.status)}</Text>
           </View>
         </View>
 
-        {/* Ana Bilgiler */}
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>
-            {profile?.role === 'customer' ? appointment.business?.name || 'İşletme' : appointment.customer?.full_name || 'Müşteri'}
-          </Text>
-          {profile?.role === 'customer' && appointment.business?.description && (
-            <Text style={styles.infoSubtitle}>🏪 {appointment.business.description}</Text>
-          )}
-          {profile?.role === 'business_owner' && (
-            <Text style={styles.infoSubtitle}>👤 Müşteri Randevu Talebi</Text>
-          )}
+        {profile?.role === 'customer' && appointment.business && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>İşletme Bilgileri</Text>
+            {businessPhoto && (
+              <Image source={{ uri: businessPhoto }} style={styles.businessImage} resizeMode="cover" />
+            )}
+            <Text style={styles.businessName}>{appointment.business.name}</Text>
+            {appointment.business.description && (
+              <Text style={styles.businessDescription}>🏪 {appointment.business.description}</Text>
+            )}
+            {appointment.business.address && (
+              <View style={styles.addressContainer}>
+                <Icon name="location-pin" type="material" color="#555" size={20} style={{marginRight: 5}}/>
+                <Text style={styles.addressText}>{appointment.business.address}</Text>
+              </View>
+            )}
+            {appointment.business.address && (
+              <TouchableOpacity 
+                style={styles.mapButton}
+                onPress={() => handleOpenMaps(appointment.business?.address, appointment.business?.name)}
+              >
+                <Icon name="map" type="material-community" color="white" size={18} style={{marginRight: 8}}/>
+                <Text style={styles.mapButtonText}>Haritada Göster</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {profile?.role === 'business_owner' && appointment.customer && (
+             <View style={styles.card}>
+                <Text style={styles.cardTitle}>Müşteri Bilgisi</Text>
+                <View style={styles.infoRow}>
+                    <Icon name="person-outline" type="material" color="#555" size={20} style={{marginRight: 10}}/>
+                    <Text style={styles.infoValueBold}>{appointment.customer.full_name}</Text>
+                </View>
+            </View>
+        )}
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Randevu Bilgileri</Text>
           
-          <View style={styles.infoSection}>
-            <Text style={styles.infoLabel}>📅 Tarih</Text>
-            <Text style={styles.infoValue}>{formatDate(appointment.appointment_date)}</Text>
+          <View style={styles.infoRow}>
+            <Icon name="calendar-today" type="material" color="#555" size={20} style={{marginRight: 10}}/>
+            <View>
+              <Text style={styles.infoLabel}>Tarih</Text>
+              <Text style={styles.infoValueBold}>{formatDate(appointment.appointment_date)}</Text>
+            </View>
           </View>
 
-          <View style={styles.infoSection}>
-            <Text style={styles.infoLabel}>⏰ Saat</Text>
-            <Text style={styles.infoValue}>{appointment.appointment_time}</Text>
+          <View style={styles.infoRow}>
+            <Icon name="access-time" type="material" color="#555" size={20} style={{marginRight: 10}}/>
+            <View>
+              <Text style={styles.infoLabel}>Saat</Text>
+              <Text style={styles.infoValueBold}>{appointment.appointment_time}</Text>
+            </View>
           </View>
 
           {appointment.notes && (
-            <View style={styles.infoSection}>
-              <Text style={styles.infoLabel}>
-                {profile?.role === 'customer' ? '💬 Notlarım' : '💬 Müşteri Notları'}
-              </Text>
-              <Text style={styles.infoValue}>{appointment.notes}</Text>
+            <View style={styles.infoRow}>
+              <Icon name="chat-bubble-outline" type="material" color="#555" size={20} style={{marginRight: 10}}/>
+              <View>
+                <Text style={styles.infoLabel}>
+                  {profile?.role === 'customer' ? 'Notlarım' : 'Müşteri Notları'}
+                </Text>
+                <Text style={styles.infoValue}>{appointment.notes}</Text>
+              </View>
             </View>
           )}
-
           {!appointment.notes && profile?.role === 'business_owner' && (
-            <View style={styles.infoSection}>
-              <Text style={styles.infoLabel}>💬 Müşteri Notları</Text>
-              <Text style={[styles.infoValue, styles.noNotes]}>Not eklenmemiş</Text>
+            <View style={styles.infoRow}>
+              <Icon name="chat-bubble-outline" type="material" color="#555" size={20} style={{marginRight: 10}}/>
+                <View>
+                    <Text style={styles.infoLabel}>Müşteri Notları</Text>
+                    <Text style={[styles.infoValue, styles.italicText]}>Not eklenmemiş</Text>
+                </View>
             </View>
           )}
         </View>
 
-        {/* Eylemler */}
         {availableActions.length > 0 && (
-          <View style={styles.actionsCard}>
-            <Text style={styles.actionsTitle}>
+          <View style={[styles.card, styles.actionsCardContainer]}>
+            <Text style={styles.cardTitle}>
               {profile?.role === 'customer' ? 'Randevu İşlemleri' : 'Randevu Yönetimi'}
             </Text>
             {availableActions.map((action, index) => (
@@ -251,12 +337,13 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
                 onPress={() => {
                   Alert.alert(
                     'Onay',
-                    `Randevu durumunu "${action.label}" olarak değiştirmek istediğinizden emin misiniz?`,
+                    `Randevuyu "${action.label.replace(/✅ |❌ |🎉 /g, '')}" olarak işaretlemek istediğinizden emin misiniz?`,
                     [
-                      { text: 'İptal', style: 'cancel' },
+                      { text: 'Vazgeç', style: 'cancel' },
                       {
-                        text: 'Evet',
+                        text: 'Evet, Eminim',
                         onPress: () => updateAppointmentStatus(action.status),
+                        style: 'destructive'
                       },
                     ]
                   );
@@ -264,7 +351,7 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
                 disabled={updating}
               >
                 <Text style={styles.actionButtonText}>
-                  {updating ? 'Güncelleniyor...' : action.label}
+                  {updating ? 'İşleniyor...' : action.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -278,99 +365,133 @@ export default function AppointmentDetailScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F4F7FC',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 15,
-    backgroundColor: 'white',
-  },
-  headerBackButton: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  placeholder: {
-    width: 50,
-  },
-  content: {
+  contentContainer: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 15,
   },
-  statusContainer: {
+  statusSection: {
     alignItems: 'center',
     marginVertical: 20,
   },
   statusBadge: {
-    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 25,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   statusText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  infoCard: {
-    backgroundColor: 'white',
+  card: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
     marginBottom: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  infoTitle: {
-    fontSize: 24,
+  cardTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
+    color: '#2C3E50',
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+    paddingBottom: 10,
   },
-  infoSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
-  },
-  infoSection: {
+  businessImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
     marginBottom: 15,
   },
-  infoLabel: {
+  businessName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  businessDescription: {
+    fontSize: 15,
+    color: '#555',
+    marginBottom: 15,
+    lineHeight: 22, 
+  },
+  addressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  addressText: {
+    fontSize: 15,
+    color: '#444',
+    flex: 1,
+  },
+  mapButton: {
+    flexDirection: 'row',
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 5,
+  },
+  mapButtonText: {
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 18,
+  },
+  infoLabel: {
+    fontSize: 14,
     color: '#666',
-    marginBottom: 5,
+    marginBottom: 3,
   },
   infoValue: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#333',
+    lineHeight: 22,
   },
-  noNotes: {
+  infoValueBold: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  italicText: {
     fontStyle: 'italic',
-    color: '#999',
+    color: '#777',
   },
-  actionsCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-  },
-  actionsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
+  actionsCardContainer: {
   },
   actionButton: {
-    padding: 15,
-    borderRadius: 10,
+    paddingVertical: 14,
+    borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   actionButtonText: {
     color: 'white',
@@ -382,6 +503,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#F4F7FC',
   },
   loadingText: {
     marginTop: 10,
@@ -390,7 +512,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#F44336',
+    color: '#D32F2F',
     textAlign: 'center',
     marginBottom: 20,
   },
