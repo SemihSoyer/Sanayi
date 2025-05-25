@@ -23,19 +23,27 @@ interface ServiceType {
   icon_url?: string;
 }
 
-interface BusinessFullDetails {
-  id: string; // id alanı eklendi
-  owner_id: string;
+interface OperatingHourData {
+  day_of_week: number; 
+  open_time: string | null;
+  close_time: string | null;
+  is_closed: boolean;
+}
+
+interface Business {
+  id: string;
   name: string;
-  description: string | null;
-  address: string | null;
-  photos: string[] | null;
-  latitude: number | null;
-  longitude: number | null;
-  category?: string | null; // Opsiyonel kategori alanı
-  phone?: string | null; // Opsiyonel telefon alanı
-  website?: string | null; // Opsiyonel web sitesi alanı
-  is_published?: boolean;
+  description?: string;
+  address?: string;
+  photos?: string[];
+  is_published: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: { name: string } | null;
+  services?: Array<{ id: string; name: string; icon_url?: string; }>;
+  operating_hours?: OperatingHourData[]; // YENİ EKLENDİ
+  // Eğer `service_types` veya `cities` gibi alanlar varsa ve Business interface'inde farklı bir isimle tutuluyorsa
+  // (örn: `business_services` yerine `services`), yukarıdaki select sorgusundaki alias'larla eşleştiğinden emin olun.
 }
 
 const screenWidth = Dimensions.get('window').width;
@@ -46,7 +54,7 @@ const BusinessDetailScreen = () => {
   const navigation = useNavigation<BusinessDetailScreenNavigationProp>();
   const { businessId } = route.params; // businessOwnerId -> businessId
 
-  const [business, setBusiness] = useState<BusinessFullDetails | null>(null);
+  const [business, setBusiness] = useState<Business | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,73 +152,59 @@ const BusinessDetailScreen = () => {
     setLoading(true);
     setError(null);
     try {
-      // İşletme detaylarını çek
-      const { data, error: fetchError } = await supabase
+      const { data, error } = await supabase
         .from('businesses')
-        .select('owner_id, name, description, address, photos, latitude, longitude, is_published') // category, phone, website kaldırıldı
-        .eq('id', businessId) // owner_id -> id
+        .select(`
+          id,
+          name,
+          description,
+          address,
+          photos,
+          is_published,
+          latitude,
+          longitude,
+          city:cities(name),
+          operating_hours:business_operating_hours(
+            day_of_week,
+            open_time,
+            close_time,
+            is_closed
+          ),
+          business_services:BusinessServices( 
+            service_type:ServiceTypes(id, name, icon_url) 
+          )
+        `)
+        .eq('id', businessId)
         .eq('is_published', true)
-        .single();
+        .maybeSingle();
 
-      if (fetchError) {
-        if (fetchError.code === 'PGRST116') {
-          setError('İşletme bulunamadı veya yayında değil.');
-        } else {
-          throw fetchError;
-        }
-      }
+      if (error) throw error;
 
-      // İşletmenin hizmet türlerini çek
       if (data) {
-        const { data: serviceData, error: serviceError } = await supabase
-          .from('BusinessServices')
-          .select(`
-            ServiceTypes (
-              id,
-              name,
-              icon_url
-            )
-          `)
-          .eq('business_id', businessId);
-
-        if (serviceError) {
-          console.warn('Service types çekilirken hata:', serviceError);
-        } else {
-          // Service types'ları düzenle
-          const services: ServiceType[] = [];
-          if (serviceData) {
-            serviceData.forEach((item: any) => {
-              if (item.ServiceTypes) {
-                services.push({
-                  id: item.ServiceTypes.id,
-                  name: item.ServiceTypes.name,
-                  icon_url: item.ServiceTypes.icon_url
-                });
-              }
-            });
-          }
-          setServiceTypes(services);
-        }
-      }
-
-      setBusiness(data as BusinessFullDetails); 
-      if (data && !fetchError) {
-        logBusinessClick(businessId, session?.user?.id, data.owner_id);
+        const processedData = {
+          ...data,
+          city: Array.isArray(data.city) ? data.city[0] || null : data.city,
+          services: data.business_services 
+            ? data.business_services.map((bs: any) => bs.service_type).filter(Boolean) 
+            : [],
+        };
+        delete (processedData as any).business_services; 
+        setBusiness(processedData as Business);
+      } else {
+        setBusiness(null);
+        Alert.alert('Hata', 'İşletme bulunamadı veya henüz yayınlanmamış.');
+        navigation.goBack();
       }
     } catch (err) {
-      if (err instanceof Error) {
-        setError('İşletme detayları yüklenirken bir hata oluştu: ' + err.message);
-        console.error("Error in fetchBusinessDetails:", err);
-      } else {
-        setError('Bilinmeyen bir hata oluştu.');
-        console.error("Unknown error in fetchBusinessDetails:", err);
-      }
-      setBusiness(null);
-      setServiceTypes([]);
+      console.error('İşletme detayları getirilirken hata:', err);
+      // Hata mesajını kullanıcıya göstermek için daha spesifik bir mesaj veya err objesini inceleyebilirsiniz.
+      const  errorMessage = err instanceof Error ? err.message : 'Bilinmeyen bir hata oluştu.';
+      Alert.alert('Veri Çekme Hatası', `İşletme detayları getirilemedi: ${errorMessage}`);
+      navigation.goBack();
     } finally {
       setLoading(false);
     }
-  }, [businessId, session]); // session bağımlılık olarak eklendi
+  }, [businessId, navigation]);
 
   // businessId her değiştiğinde, bu ID için tıklama logunu sıfırla
   useEffect(() => {
@@ -240,364 +234,396 @@ const BusinessDetailScreen = () => {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0066CC" />
-        <Text style={styles.loadingText}>İşletme detayları yükleniyor...</Text>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>İşletme Detayları Yükleniyor...</Text>
       </View>
     );
   }
 
-  if (error) {
+  if (error || !business) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" type="ionicon" size={60} color="#ff6347" />
-        <Text style={styles.errorText}>{error}</Text>
+        <Icon name="alert-circle-outline" type="ionicon" size={50} color="#D32F2F" />
+        <Text style={styles.errorText}>{error || 'İşletme bulunamadı.'}</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Geri Dön</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  if (!business) {
-    return (
-      <View style={styles.centered}>
-        <Icon name="store-remove-outline" type="material-community" size={60} color="#888" />
-        <Text style={styles.emptyText}>İşletme bilgisi bulunamadı.</Text>
-      </View>
-    );
-  }
+  const formattedHours = formatOperatingHours(business.operating_hours);
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        {/* Fotoğraf Galerisi */}
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContentContainer}>
+      {/* Hero Section with Image and Name */}
+      <View style={styles.heroContainer}>
         {business.photos && business.photos.length > 0 ? (
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            style={styles.photoGallery}
-          >
-            {business.photos.map((url, index) => (
-              <Image key={index} source={{ uri: url }} style={styles.galleryImage} resizeMode="cover" />
-            ))}
-          </ScrollView>
+          <Image source={{ uri: business.photos[0] }} style={styles.heroImage} resizeMode="cover" />
         ) : (
-          <View style={styles.noPhotoContainer}>
-            <Icon name="image-off-outline" type="material-community" size={80} color="#ccc" />
-            <Text style={styles.noPhotoText}>İşletmeye ait fotoğraf bulunmuyor.</Text>
+          <View style={[styles.heroImage, styles.placeholderImageContainer]}>
+            <Icon name="storefront-outline" type="ionicon" size={80} color="#A0A0A0" />
+          </View>
+        )}
+        <View style={styles.heroOverlay} />
+        <Text style={styles.businessNameOnImage}>{business.name}</Text>
+      </View>
+
+      {/* Genel Bilgiler Kartı */}
+      <View style={styles.cardContainer}>
+        {business.description && (
+          <View style={styles.cardSection}>
+            <Text style={styles.cardSectionTitle}>Hakkında</Text>
+            <Text style={styles.descriptionText}>{business.description}</Text>
           </View>
         )}
 
-        <View style={styles.contentContainer}>
-          <Text style={styles.businessName}>{business.name}</Text>
-
-          {business.category && (
-            <View style={styles.infoRow}>
-              <Icon name="tag-outline" type="material-community" size={20} color="#555" style={styles.infoIcon} />
-              <Text style={styles.categoryText}>{business.category}</Text>
+        {business.address && (
+          <View style={styles.cardSection}>
+            <Text style={styles.cardSectionTitle}>Adres</Text>
+            <TouchableOpacity style={styles.infoRowLink} onPress={() => handleOpenMaps(business.address, business.name)}>
+              <Icon name="location-outline" type="ionicon" size={20} color="#007AFF" style={styles.infoIcon} />
+              <Text style={styles.addressText}>{business.address}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {business.city && business.city.name && (
+             <View style={styles.cardSection}>
+                <Text style={styles.cardSectionTitle}>Şehir</Text>
+                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <Icon name="map-marker-outline" type="material-community" color="#555" size={20} style={styles.infoIcon}/>
+                    <Text style={styles.defaultText}>{business.city.name}</Text>
+                </View>
             </View>
-          )}
+        )}
+      </View>
 
-          {business.description && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Hakkında</Text>
-              <Text style={styles.descriptionText}>{business.description}</Text>
-            </View>
-          )}
-
-          {/* Hizmet Türleri */}
-          {serviceTypes.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Hizmet Türleri</Text>
-              <View style={styles.servicesContainer}>
-                {serviceTypes.map((service) => (
-                  <View key={service.id} style={styles.serviceTag}>
-                    <Icon name="checkmark-circle" type="ionicon" size={16} color="#4CAF50" />
-                    <Text style={styles.serviceTagText}>{service.name}</Text>
-                  </View>
-                ))}
+      {/* Hizmet Türleri Kartı */}
+      {business.services && business.services.length > 0 && (
+        <View style={styles.cardContainer}>
+          <Text style={styles.cardSectionTitle}>Sunulan Hizmetler</Text>
+          <View style={styles.servicesFlexContainer}>
+            {business.services.map(service => (
+              <View key={service.id} style={styles.serviceChip}>
+                {service.icon_url ? 
+                  <Image source={{uri: service.icon_url}} style={styles.serviceChipIcon} /> : 
+                  <Icon name="cog-outline" type="ionicon" size={16} color="#4A5568" style={styles.serviceChipIcon}/>
+                }
+                <Text style={styles.serviceChipText}>{service.name}</Text>
               </View>
-            </View>
-          )}
-
-          {business.address && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Adres</Text>
-              <TouchableOpacity onPress={openMapNavigation}>
-                <View style={styles.infoRow}>
-                  <Icon name="location-outline" type="ionicon" size={20} color="#0066CC" style={styles.infoIcon} />
-                  <Text style={styles.addressText}>{business.address}</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {business.phone && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Telefon</Text>
-              <TouchableOpacity onPress={() => Linking.openURL(`tel:${business.phone}`)}>
-                <View style={styles.infoRow}>
-                  <Icon name="call-outline" type="ionicon" size={20} color="#0066CC" style={styles.infoIcon} />
-                  <Text style={styles.linkText}>{business.phone}</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {business.website && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Web Sitesi</Text>
-              <TouchableOpacity onPress={() => Linking.openURL(business.website!)}>
-                <View style={styles.infoRow}>
-                  <Icon name="globe-outline" type="ionicon" size={20} color="#0066CC" style={styles.infoIcon} />
-                  <Text style={styles.linkText}>{business.website}</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Harita Bölümü */}
-          {business.latitude && business.longitude && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Konum</Text>
-              <View style={styles.mapContainer}>
-                <MapView
-                  style={styles.map}
-                  initialRegion={{
-                    latitude: business.latitude,
-                    longitude: business.longitude,
-                    latitudeDelta: 0.01, // Daha yakın bir zoom
-                    longitudeDelta: 0.01,
-                  }}
-                  scrollEnabled={false} // İsteğe bağlı: Kaydırmayı engelle
-                  zoomEnabled={false}   // İsteğe bağlı: Zoom'u engelle
-                >
-                  <Marker
-                    coordinate={{ latitude: business.latitude, longitude: business.longitude }}
-                    title={business.name}
-                  />
-                </MapView>
-                <TouchableOpacity style={styles.openMapButton} onPress={openMapNavigation}>
-                  <Text style={styles.openMapButtonText}>Haritada Aç</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-          
-          {/* Bottom padding for floating button */}
-          <View style={styles.bottomSpacer} />
+            ))}
+          </View>
         </View>
-      </ScrollView>
+      )}
+      
+      {/* Çalışma Saatleri Kartı */}
+      <View style={styles.cardContainer}>
+        <Text style={styles.cardSectionTitle}>Çalışma Saatleri</Text>
+        {formattedHours.map((line, index) => (
+          <View key={index} style={[styles.operatingHoursRow, index === formattedHours.length - 1 && styles.noBorderBottom]}>
+            <Icon 
+              name={line.isClosed ? "close-circle" : "time-outline"} 
+              type="ionicon" 
+              color={line.isClosed ? styles.closedColor.color : styles.openColor.color} 
+              size={20} 
+              style={styles.operatingHoursIcon}
+            />
+            <Text style={[styles.operatingHoursDayText, line.isClosed && styles.closedText]}>{line.day}:</Text>
+            <Text style={[styles.operatingHoursTimeText, line.isClosed ? styles.closedText : styles.openText]}>
+              {line.hours}
+            </Text>
+          </View>
+        ))}
+      </View>
 
-      {/* Floating Randevu Butonu */}
-      <View style={styles.floatingButtonContainer}>
-        <TouchableOpacity 
-          style={styles.appointmentButton}
-          onPress={() => navigation.navigate('CreateAppointment', { preSelectedBusinessId: businessId })}
-          activeOpacity={0.8}
-        >
-          <Icon name="calendar" type="ionicon" size={24} color="#FFFFFF" style={styles.appointmentIcon} />
-          <Text style={styles.appointmentButtonText}>Randevu Al</Text>
+      {/* Randevu Al Butonu (Floating veya sabit) */}
+      <View style={styles.fabContainer}>
+         <TouchableOpacity 
+            style={styles.primaryButton} 
+            onPress={() => navigation.navigate('CreateAppointment', { preSelectedBusinessId: businessId })}
+          >
+            <Icon name="calendar-plus-o" type="font-awesome" color="white" size={20} style={{marginRight:10}}/>
+            <Text style={styles.primaryButtonText}>Randevu Al</Text>
         </TouchableOpacity>
       </View>
-    </View>
+
+    </ScrollView>
   );
+};
+
+// Component dışında veya bir utils dosyasında
+const daysOfWeekMap = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+
+const formatOperatingHours = (hours: OperatingHourData[] | undefined): Array<{ day: string; hours: string; isClosed: boolean }> => {
+  if (!hours || hours.length === 0) {
+      // Pazartesi'den Pazar'a sıralı günler için varsayılan oluştur
+      const defaultDisplayOrder = [1, 2, 3, 4, 5, 6, 0];
+      return defaultDisplayOrder.map(dayIndex => ({
+          day: daysOfWeekMap[dayIndex],
+          hours: 'Belirtilmemiş',
+          isClosed: true 
+      }));
+  }
+
+  const displayHours: Array<{ day: string; hours: string; isClosed: boolean }> = [];
+  const hoursByDay: { [key: number]: OperatingHourData } = {};
+  hours.forEach(h => {
+      hoursByDay[h.day_of_week] = h;
+  });
+
+  const displayOrder = [1, 2, 3, 4, 5, 6, 0]; // Pazartesi (1) ... Pazar (0)
+
+  displayOrder.forEach(dayIndex => {
+    const dayName = daysOfWeekMap[dayIndex];
+    const hourInfo = hoursByDay[dayIndex];
+
+    if (hourInfo) {
+      if (hourInfo.is_closed || (!hourInfo.open_time && !hourInfo.close_time)) {
+        displayHours.push({ day: dayName, hours: 'Kapalı', isClosed: true });
+      } else {
+        const open = hourInfo.open_time ? hourInfo.open_time.substring(0, 5) : 'N/A';
+        const close = hourInfo.close_time ? hourInfo.close_time.substring(0, 5) : 'N/A';
+        displayHours.push({ day: dayName, hours: `${open} - ${close}`, isClosed: false });
+      }
+    } else {
+      displayHours.push({ day: dayName, hours: 'Belirtilmemiş', isClosed: true });
+    }
+  });
+
+  return displayHours;
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+    backgroundColor: '#F4F7FC', // Genel arka plan rengi
   },
-  scrollContainer: {
-    flex: 1,
+  scrollContentContainer: {
+    paddingBottom: 80, // FAB için boşluk
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#E0F7FA', // Açık mavi arka plan
+    backgroundColor: '#F4F7FC',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 15,
     fontSize: 16,
     color: '#555',
   },
   errorText: {
-    marginTop: 15,
     fontSize: 17,
-    color: '#d9534f',
+    color: '#D32F2F',
     textAlign: 'center',
+    marginBottom: 20,
   },
-  emptyText: {
-    marginTop: 15,
-    fontSize: 17,
-    color: '#777',
-    textAlign: 'center',
+  backButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
-  photoGallery: {
-    height: screenHeight * 0.35, // Ekran yüksekliğinin %35'i
-    backgroundColor: '#000',
+  backButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  galleryImage: {
-    width: screenWidth,
-    height: screenHeight * 0.35,
+  heroContainer: {
+    height: 250, // Yükseklik ayarlanabilir
+    backgroundColor: '#DDEEFF', // Placeholder rengi
   },
-  noPhotoContainer: {
-    height: screenHeight * 0.3,
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderImageContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#e9ecef',
+    backgroundColor: '#EAEAEA',
   },
-  noPhotoText: {
-    marginTop: 10,
-    color: '#888',
-    fontSize: 16,
-  },
-  contentContainer: {
-    padding: 20,
-    backgroundColor: '#fff', // İçerik alanı için beyaz arka plan
-    borderTopLeftRadius: 20, // Üst köşeleri yuvarlat
-    borderTopRightRadius: 20,
-    marginTop: -20, // Fotoğraf galerisinin üzerine hafifçe binsin
-    zIndex: 1,
-  },
-  businessName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  categoryText: {
-    fontSize: 16,
-    color: '#777',
-    marginBottom: 15,
-  },
-  section: {
-    marginBottom: 25,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#444',
-    marginBottom: 12,
-  },
-  descriptionText: {
-    fontSize: 16,
-    color: '#555',
-    lineHeight: 24,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  infoIcon: {
-    marginRight: 10,
-  },
-  addressText: {
-    fontSize: 16,
-    color: '#0066CC', // Yeni birincil mavi
-    flexShrink: 1, // Uzun adreslerin taşmasını engelle
-    textDecorationLine: 'underline',
-  },
-  linkText: {
-    fontSize: 16,
-    color: '#0066CC', // Yeni birincil mavi
-    textDecorationLine: 'underline',
-  },
-  mapContainer: {
-    height: 200, // Harita yüksekliği
-    borderRadius: 12,
-    overflow: 'hidden', // Haritanın köşelerini yuvarlatmak için
-    marginTop: 5,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  map: {
+  heroOverlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Hafif karartma
   },
-  openMapButton: {
+  businessNameOnImage: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 102, 204, 0.9)', // #0066CC'nin alpha kanallı hali
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    bottom: 15,
+    left: 15,
+    right: 15,
+    color: 'white',
+    fontSize: 26,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+  },
+  cardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginTop: -40, // Hero image üzerine taşması için (sadece ilk kart için geçerli olabilir)
+    marginBottom: 20,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
     elevation: 3,
   },
-  openMapButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
+  cardSection: {
+    marginBottom: 18, // Bölümler arası boşluk
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  servicesContainer: {
+  cardSectionTitle: {
+    fontSize: 18, // Daha belirgin başlık
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 10,
+  },
+  descriptionText: {
+    fontSize: 15,
+    color: '#4A5568',
+    lineHeight: 22,
+  },
+  addressText: {
+    fontSize: 15,
+    color: '#007AFF', // Adres tıklanabilir gibi görünsün
+    flexShrink: 1, // Uzun adresler için
+  },
+  defaultText:{
+      fontSize: 15,
+      color: '#4A5568',
+  },
+  infoRowLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoIcon: {
+    marginRight: 8,
+  },
+  servicesFlexContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    marginTop: 5,
   },
-  serviceTag: {
+  serviceChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
+    backgroundColor: '#E9F5FF',
+    borderRadius: 20, // Daha yuvarlak
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginRight: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#BCE0FD',
   },
-  serviceTagText: {
+  serviceChipIcon: {
+    marginRight: 7,
+    width: 16, // İkon boyutunu sabitle
+    height: 16, // İkon boyutunu sabitle
+  },
+  serviceChipText: {
     fontSize: 14,
+    color: '#005A9E',
     fontWeight: '500',
-    color: '#388E3C',
-    marginLeft: 6,
   },
-  floatingButtonContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  appointmentButton: {
-    backgroundColor: '#0066CC',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 25,
+  operatingHoursRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F4F4F4',
+  },
+  noBorderBottom: {
+    borderBottomWidth: 0,
+  },
+  operatingHoursIcon: {
+    marginRight: 12, // İkon ve metin arası boşluk
+  },
+  operatingHoursDayText: {
+    fontSize: 15,
+    color: '#333333',
+    fontWeight: '500',
+    width: 100, // Gün isimlerinin hizalı durması için yeterli genişlik
+  },
+  operatingHoursTimeText: {
+    fontSize: 15,
+    flexShrink: 1, 
+  },
+  openText: {
+    color: '#28A745', 
+    fontWeight: '500',
+  },
+  closedText: {
+    color: '#DC3545',
+  },
+  openColor: { color: '#28A745' }, // Sadece renk için (ikon)
+  closedColor: { color: '#DC3545' }, // Sadece renk için (ikon)
+
+  fabContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    backgroundColor: '#007AFF',
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 30, // Daha yuvarlak buton
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowRadius: 3,
+    minWidth: '80%',
   },
-  appointmentIcon: {
-    marginRight: 10,
-  },
-  appointmentButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+  primaryButtonText: {
+    color: 'white',
+    fontSize: 17,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
-  bottomSpacer: {
-    height: 120, // Floating button için yer bırak
-  },
+  // handleOpenMaps fonksiyonu burada veya component içinde tanımlı olmalı
 });
+
+// handleOpenMaps (Eğer component içinde değilse, buraya taşıyın veya import edin)
+const handleOpenMaps = (address?: string, businessName?: string) => {
+  if (!address) {
+    Alert.alert('Hata', 'İşletme adresi bulunamadı.');
+    return;
+  }
+  const scheme = Platform.OS === 'ios' ? 'maps://0,0?q=' : 'geo:0,0?q=';
+  const latLng = ''; // Enlem boylam varsa eklenebilir, şimdilik sadece adres
+  const label = businessName || 'İşletme Konumu';
+  const url = Platform.OS === 'ios' 
+    ? `${scheme}${label}@${latLng}${encodeURIComponent(address)}` 
+    : `${scheme}${latLng}(${encodeURIComponent(label)})?q=${encodeURIComponent(address)}`;
+
+  Linking.canOpenURL(url)
+    .then(supported => {
+      if (supported) {
+        return Linking.openURL(url);
+      } else {
+        // Fallback to Google Maps website if app not available
+        const browserUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+        return Linking.openURL(browserUrl);
+      }
+    })
+    .catch(err => {
+        console.error('Harita açma hatası:', err);
+        Alert.alert('Hata', 'Harita uygulaması açılamadı.');
+    });
+};
 
 export default BusinessDetailScreen;
