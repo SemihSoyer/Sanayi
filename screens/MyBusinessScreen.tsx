@@ -411,7 +411,7 @@ const MyBusinessScreen = () => {
     // Enlem ve boylam için de kontrol eklenebilir (isteğe bağlı)
     if (latitude === null || longitude === null) {
         Alert.alert('Eksik Bilgi', 'Lütfen haritadan işletmenizin konumunu seçin.');
-        return;
+      return;
     }
 
     setSaving(true);
@@ -423,7 +423,7 @@ const MyBusinessScreen = () => {
         address: address.trim(),
         city_id: selectedCityId,
         photos: photos,
-        is_published: isPublished, 
+        is_published: isPublished,
         latitude: latitude,
         longitude: longitude,
       };
@@ -434,11 +434,11 @@ const MyBusinessScreen = () => {
         // Var olan işletmeyi güncelle
         console.log('[MyBusinessScreen] Updating existing business, ID:', currentBusinessId);
         const { data, error } = await supabase
-          .from('businesses')
+        .from('businesses')
           .update(businessDataToSave)
           .eq('id', currentBusinessId)
           .select('id') // Güncellenen kaydın ID'sini geri al
-          .single();
+        .single();
         if (error) throw error;
         if (!data) throw new Error("İşletme güncellenirken ID alınamadı.");
         savedBusinessId = data.id;
@@ -486,8 +486,8 @@ const MyBusinessScreen = () => {
           if (insertError) {
             console.error('[MyBusinessScreen] Error inserting new business services:', insertError);
             // throw insertError;
-          }
         }
+      }
         console.log('[MyBusinessScreen] Business services updated.');
 
         // YENİ EKLENEN KISIM: Çalışma Saatlerini Kaydet/Güncelle (UPSERT)
@@ -1129,7 +1129,7 @@ const MyBusinessScreen = () => {
           />
         )
       )}
-      
+
       <Button title={saving || uploadingPhoto ? 'Kaydediliyor...' : 'Bilgileri Kaydet'} onPress={handleSaveBusinessDetails} disabled={saving || loading || uploadingPhoto || publishing} buttonStyle={[styles.actionButton, styles.saveButton]} titleStyle={styles.actionButtonTitle} containerStyle={styles.buttonContainer} />
       {hasBusiness && (<Button title="Vazgeç" onPress={() => { setIsEditing(false); fetchOwnerIdAndInitialData(); }} type="outline" buttonStyle={[styles.actionButton, styles.cancelButton]} titleStyle={[styles.actionButtonTitle, styles.cancelButtonTitle]} containerStyle={styles.buttonContainer} disabled={publishing} />)}
     </ScrollView>

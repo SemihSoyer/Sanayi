@@ -1,16 +1,49 @@
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'; // useLayoutEffect eklendi
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions, Linking, TouchableOpacity, Platform, Alert } from 'react-native'; // Alert eklendi
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, Dimensions, Linking, TouchableOpacity, Platform, Alert, Modal, TextInput } from 'react-native'; // Alert, Modal, TextInput eklendi
 import { Card, Icon } from '@rneui/themed';
 import MapView, { Marker } from 'react-native-maps';
-import { supabase } from '../lib/supabase';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native'; // useNavigation eklendi
 import { Session } from '@supabase/supabase-js'; // Session import edildi
 import { StackNavigationProp } from '@react-navigation/stack'; // StackNavigationProp eklendi
+import { Calendar, LocaleConfig, DateData } from 'react-native-calendars'; // Calendar ve LocaleConfig eklendi
+import { useCustomerAvailableSlots, CustomerDisplaySlot } from '../hooks/useCustomerAvailableSlots'; // Yeni hook import edildi
+import { supabase } from '../lib/supabase'; // EKSİK IMPORT EKLENDİ
+
+// Türkçe takvim ayarları
+LocaleConfig.locales['tr'] = {
+  monthNames: [
+    'Ocak',
+    'Şubat',
+    'Mart',
+    'Nisan',
+    'Mayıs',
+    'Haziran',
+    'Temmuz',
+    'Ağustos',
+    'Eylül',
+    'Ekim',
+    'Kasım',
+    'Aralık',
+  ],
+  monthNamesShort: ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'],
+  dayNames: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
+  dayNamesShort: ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'],
+  today: "Bugün",
+};
+LocaleConfig.defaultLocale = 'tr';
+
+// BookingStep için type tanımı
+type BookingStep = 'selectDateTime' | 'fillDetails' | 'confirmation' | 'error';
 
 // App.tsx'deki RootStackParamList'e göre güncellenecek
 type RootStackParamList = {
   BusinessDetail: { businessId: string }; // businessOwnerId -> businessId olarak değiştirildi
-  CreateAppointment: { preSelectedBusinessId?: string }; // Randevu Oluştur - önceden seçili işletme ID'si
+  CreateAppointment: { 
+    preSelectedBusinessId?: string; 
+    selectedDate?: string;
+    selectedSlotId?: string;
+    slotDetails?: { startTime: string; endTime: string; slotName: string; };
+  }; // Randevu Oluştur - önceden seçili işletme ID'si
   // Diğer ekranlarınız...
 };
 
@@ -60,6 +93,26 @@ const BusinessDetailScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const hasLoggedForCurrentBusinessIdRef = useRef(false); // Tıklamanın bu businessId için loglanıp loglanmadığını takip eder
+
+  // Modal ve randevu seçimi için yeni state'ler
+  const [isBookingModalVisible, setIsBookingModalVisible] = useState(false);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<DateData | null>(null);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<CustomerDisplaySlot | null>(null);
+  const [bookingStep, setBookingStep] = useState<BookingStep>('selectDateTime'); // YENİ: Modal içi adımlar için state
+  const [appointmentNote, setAppointmentNote] = useState(''); // YENİ: Randevu notu için state
+  const [isSubmittingAppointment, setIsSubmittingAppointment] = useState(false); // YENİ: Randevu oluşturma yüklenme durumu
+  const [bookingError, setBookingError] = useState<string | null>(null); // YENİ: Randevu oluşturma hata mesajı
+
+  // Müşteri için müsait slotları çekme hook'u
+  const { 
+    bookableSlots, 
+    loadingCustomerSlots, 
+    errorCustomerSlots, 
+    fetchCustomerSlotsForDate 
+  } = useCustomerAvailableSlots({
+    businessId: business?.id || null, // business yüklendiğinde id'sini kullan
+    selectedDate: selectedCalendarDate ? new Date(selectedCalendarDate.timestamp) : null 
+  });
 
   // Header'ı güzelleştir
   useLayoutEffect(() => {
@@ -231,6 +284,103 @@ const BusinessDetailScreen = () => {
     }
   };
 
+  // YENİ: Randevu oluşturma ve onaylama fonksiyonu
+  const handleConfirmAndCreateAppointment = async () => {
+    if (!business || !selectedCalendarDate || !selectedTimeSlot || !session?.user) {
+      setBookingError("Randevu oluşturmak için gerekli bilgiler eksik. Lütfen tekrar deneyin.");
+      setBookingStep('error');
+      return;
+    }
+
+    setIsSubmittingAppointment(true);
+    setBookingError(null);
+
+    console.log('[BusinessDetailScreen] Creating appointment. User:', JSON.stringify(session?.user, null, 2)); // EKLENDİ: Kullanıcı bilgisini logla
+    console.log('[BusinessDetailScreen] Creating appointment. Business ID:', business.id);
+    console.log('[BusinessDetailScreen] Creating appointment. Date:', selectedCalendarDate.dateString);
+    console.log('[BusinessDetailScreen] Creating appointment. Slot ID:', selectedTimeSlot.id);
+
+    try {
+      // 1. Önce o slot'ta zaten randevu var mı kontrol et
+      const appointmentTime = selectedTimeSlot.slot_name.split(' - ')[0];
+      const { data: existingAppointments, error: checkError } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('business_id', business.id)
+        .eq('appointment_date', selectedCalendarDate.dateString)
+        .eq('appointment_time', appointmentTime)
+        .not('status', 'in', '(cancelled,rejected)'); // İptal edilmiş veya reddedilmiş randevuları sayma
+
+      if (checkError) throw checkError;
+
+      // Eğer zaten randevu varsa hata ver
+      if (existingAppointments && existingAppointments.length > 0) {
+        throw new Error('Bu saat dilimi için zaten bir randevu bulunmaktadır. Lütfen başka bir saat seçin.');
+      }
+
+      // 2. appointments tablosuna yeni randevuyu ekle
+      const { data: appointmentData, error: appointmentError } = await supabase
+        .from('appointments')
+        .insert({
+          business_id: business.id,
+          customer_id: session.user.id,
+          appointment_date: selectedCalendarDate.dateString,
+          appointment_time_slot_id: selectedTimeSlot.id, // Bu, appointment_time_slots'taki ID olmalı
+          appointment_time: appointmentTime, // EKLENDİ: Başlangıç saatini ekle
+          status: 'approved', // Veritabanında geçerli status değeri
+          notes: appointmentNote,
+          // created_at ve updated_at veritabanı tarafından otomatik ayarlanmalı
+        })
+        .select()
+        .single();
+
+      if (appointmentError) throw appointmentError;
+      if (!appointmentData) throw new Error("Randevu oluşturulamadı.");
+
+      // 3. daily_slot_availability tablosundaki current_appointments_in_slot sayacını artır
+      // ÖNEMLİ: Bu RPC olmadan %100 atomik değildir. İdeal çözüm bir RPC fonksiyonudur.
+      
+      // Önce mevcut sayacı al
+      const { data: slotData, error: fetchSlotError } = await supabase
+        .from('daily_slot_availability')
+        .select('current_appointments_in_slot')
+        .eq('business_id', business.id)
+        .eq('date', selectedCalendarDate.dateString)
+        .eq('slot_id', selectedTimeSlot.id)
+        .single();
+
+      if (fetchSlotError) {
+        console.warn("Mevcut slot sayacı alınırken hata:", fetchSlotError.message);
+        // Hata olsa bile randevu oluşturulduğu için devam edebiliriz, ancak loglamak önemli.
+      }
+
+      const currentCount = slotData?.current_appointments_in_slot || 0;
+
+      const { error: updateSlotError } = await supabase
+        .from('daily_slot_availability')
+        .update({ 
+          current_appointments_in_slot: currentCount + 1 
+        })
+        .eq('business_id', business.id)
+        .eq('date', selectedCalendarDate.dateString)
+        .eq('slot_id', selectedTimeSlot.id); 
+
+      if (updateSlotError) {
+        // Eğer slot güncellemesi başarısız olursa, oluşturulan randevuyu geri almayı düşünebilirsiniz (opsiyonel)
+        console.warn("Slot sayacı güncellenirken hata oluştu, ancak randevu oluşturuldu:", updateSlotError.message);
+        // Kullanıcıya bu konuda bilgi verilebilir veya loglanabilir. Şimdilik devam ediyoruz.
+      }
+      
+      setBookingStep('confirmation');
+    } catch (err: any) {
+      console.error('Randevu oluşturma hatası:', err);
+      setBookingError(err.message || 'Randevu oluşturulurken bir hata oluştu.');
+      setBookingStep('error');
+    } finally {
+      setIsSubmittingAppointment(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -341,12 +491,251 @@ const BusinessDetailScreen = () => {
       <View style={styles.fabContainer}>
          <TouchableOpacity 
             style={styles.primaryButton} 
-            onPress={() => navigation.navigate('CreateAppointment', { preSelectedBusinessId: businessId })}
+            onPress={() => {
+              if (!business) return;
+              setSelectedCalendarDate(null); // Modalı her açtığında önceki seçimi sıfırla
+              setSelectedTimeSlot(null);
+              setAppointmentNote(''); // Notu sıfırla
+              setBookingError(null); // Hataları sıfırla
+              setBookingStep('selectDateTime'); // Adımı başa al
+              setIsBookingModalVisible(true);
+            }}
           >
             <Icon name="calendar-plus-o" type="font-awesome" color="white" size={20} style={{marginRight:10}}/>
             <Text style={styles.primaryButtonText}>Randevu Al</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Randevu için Tarih ve Saat Seçim Modalı */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isBookingModalVisible}
+        onRequestClose={() => {
+          setIsBookingModalVisible(false);
+          setBookingStep('selectDateTime'); // Modal kapatıldığında adımı sıfırla
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {bookingStep === 'selectDateTime' && 'Tarih ve Saat Seçin'}
+                {bookingStep === 'fillDetails' && 'Randevu Detayları'}
+                {bookingStep === 'confirmation' && 'Randevu Onaylandı'}
+                {bookingStep === 'error' && 'Hata'}
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setIsBookingModalVisible(false);
+                setBookingStep('selectDateTime'); // Adımı sıfırla
+              }} style={styles.modalCloseButton}>
+                <Icon name="close-circle" type="ionicon" size={28} color="#888" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Adım 1: Tarih ve Saat Seçimi */}
+            {bookingStep === 'selectDateTime' && (
+              <>
+                <Calendar
+                  style={styles.calendarInModal}
+                  current={new Date().toISOString().split('T')[0]}
+                  minDate={new Date().toISOString().split('T')[0]} // Bugünden itibaren
+                  onDayPress={(day) => {
+                    setSelectedCalendarDate(day);
+                    setSelectedTimeSlot(null); // Yeni tarih seçildiğinde saat seçimini sıfırla
+                  }}
+                  markedDates={selectedCalendarDate ? { 
+                    [selectedCalendarDate.dateString]: { selected: true, selectedColor: '#007AFF', disableTouchEvent: true }
+                  } : {}}
+                  theme={{
+                    arrowColor: '#007AFF',
+                    todayTextColor: '#007AFF',
+                    selectedDayBackgroundColor: '#007AFF',
+                    selectedDayTextColor: '#ffffff',
+                  }}
+                />
+
+                {selectedCalendarDate && (
+                  <View style={styles.slotsSectionContainer}>
+                    <Text style={styles.slotsSectionTitle}>Müsait Saatler ({selectedCalendarDate.dateString})</Text>
+                    {loadingCustomerSlots && <ActivityIndicator size="small" color="#007AFF" style={{marginTop: 15}}/>}
+                    {errorCustomerSlots && <Text style={styles.slotErrorText}>{errorCustomerSlots}</Text>}
+                    {!loadingCustomerSlots && !errorCustomerSlots && bookableSlots.length === 0 && (
+                      <Text style={styles.noSlotsText}>Bu tarih için müsait saat bulunmamaktadır.</Text>
+                    )}
+                    {!loadingCustomerSlots && !errorCustomerSlots && bookableSlots.length > 0 && (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slotsScrollView}>
+                        {bookableSlots.map((slot) => (
+                          <TouchableOpacity
+                            key={slot.id}
+                            style={[
+                              styles.slotChip,
+                              selectedTimeSlot?.id === slot.id && styles.selectedSlotChip,
+                              !slot.is_bookable && styles.disabledSlotChip,
+                            ]}
+                            disabled={!slot.is_bookable}
+                            onPress={() => {
+                              if (slot.is_bookable) {
+                                setSelectedTimeSlot(slot);
+                              } else {
+                                Alert.alert("Seçilemez", slot.reason_not_bookable || "Bu saat aralığı rezerve edilemez.");
+                              }
+                            }}
+                          >
+                            <Text 
+                              style={[
+                                styles.slotChipText,
+                                selectedTimeSlot?.id === slot.id && styles.selectedSlotChipText,
+                                !slot.is_bookable && styles.disabledSlotChipText,
+                              ]}
+                            >
+                              {slot.slot_name.substring(0,5)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
+              
+                <View style={styles.modalFooter}>
+                    <TouchableOpacity 
+                        style={[styles.modalActionButton, styles.modalCancelButton]} 
+                        onPress={() => {
+                          setIsBookingModalVisible(false);
+                          setBookingStep('selectDateTime'); // Adımı sıfırla
+                        }}
+                    >
+                        <Text style={[styles.modalActionButtonText, styles.modalCancelButtonText]}>İptal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[
+                            styles.modalActionButton, 
+                            styles.modalConfirmButton,
+                            (!selectedCalendarDate || !selectedTimeSlot) && styles.disabledButton
+                        ]} 
+                        disabled={!selectedCalendarDate || !selectedTimeSlot}
+                        onPress={() => {
+                            if (selectedCalendarDate && selectedTimeSlot && business) {
+                                setBookingStep('fillDetails'); // Sonraki adıma geç
+                            }
+                        }}
+                    >
+                        <Text style={styles.modalActionButtonText}>Devam Et</Text>
+                    </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* Adım 2: Detayları Doldurma */}
+            {bookingStep === 'fillDetails' && (
+              <ScrollView>
+                <View style={styles.confirmationSection}>
+                  <Text style={styles.confirmationTitle}>Randevu Özeti</Text>
+                  <View style={styles.summaryRow}>
+                    <Icon name="business" type="material" size={20} color="#555" style={styles.summaryIcon} />
+                    <Text style={styles.summaryTextValue}>{business?.name}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Icon name="calendar-today" type="material" size={20} color="#555" style={styles.summaryIcon} />
+                    <Text style={styles.summaryTextValue}>{selectedCalendarDate?.dateString}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Icon name="access-time" type="material" size={20} color="#555" style={styles.summaryIcon} />
+                    <Text style={styles.summaryTextValue}>{selectedTimeSlot?.slot_name}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.notesSection}>
+                  <Text style={styles.notesTitle}>Ek Notlar (Opsiyonel)</Text>
+                  <TextInput
+                    style={styles.notesInput}
+                    onChangeText={setAppointmentNote}
+                    value={appointmentNote}
+                    placeholder="Randevunuzla ilgili eklemek istediğiniz notlar..."
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
+                {isSubmittingAppointment && (
+                  <View style={styles.loadingContainerModal}>
+                    <ActivityIndicator size="large" color="#007AFF" />
+                    <Text style={styles.loadingTextModal}>Randevunuz oluşturuluyor...</Text>
+                  </View>
+                )}
+
+                {!isSubmittingAppointment && (
+                    <View style={styles.modalFooter}>
+                        <TouchableOpacity 
+                            style={[styles.modalActionButton, styles.modalCancelButton]} 
+                            onPress={() => setBookingStep('selectDateTime')} // Önceki adıma dön
+                        >
+                            <Text style={[styles.modalActionButtonText, styles.modalCancelButtonText]}>Geri</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.modalActionButton, styles.modalConfirmButton]} 
+                            onPress={handleConfirmAndCreateAppointment}
+                        >
+                            <Text style={styles.modalActionButtonText}>Randevuyu Onayla</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+              </ScrollView>
+            )}
+
+            {/* Adım 3: Onay */}
+            {bookingStep === 'confirmation' && (
+              <View style={styles.centeredStatusContainer}>
+                <Icon name="checkmark-circle-outline" type="ionicon" size={80} color="#28A745" />
+                <Text style={styles.statusTitle}>Randevu Başarıyla Oluşturuldu!</Text>
+                <Text style={styles.statusMessage}>
+                  {business?.name} için {selectedCalendarDate?.dateString} tarihi, {selectedTimeSlot?.slot_name} saatine randevunuz alınmıştır.
+                </Text>
+                <TouchableOpacity 
+                    style={[styles.modalActionButton, styles.modalConfirmButton, {marginTop: 20, width: '80%'}]} 
+                    onPress={() => {
+                      setIsBookingModalVisible(false);
+                      setBookingStep('selectDateTime'); // Adımı sıfırla
+                      // İsteğe bağlı: Müsait slotları yenile
+                      if (selectedCalendarDate && business) {
+                        fetchCustomerSlotsForDate(new Date(selectedCalendarDate.timestamp));
+                      }
+                    }}
+                >
+                    <Text style={styles.modalActionButtonText}>Harika!</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Adım 4: Hata */}
+            {bookingStep === 'error' && (
+              <View style={styles.centeredStatusContainer}>
+                <Icon name="close-circle-outline" type="ionicon" size={80} color="#DC3545" />
+                <Text style={[styles.statusTitle, {color: '#DC3545'}]}>Bir Hata Oluştu</Text>
+                <Text style={styles.statusMessage}>{bookingError || 'Randevu oluşturulurken bilinmeyen bir hata oluştu.'}</Text>
+                <View style={[styles.modalFooter, {marginTop:20, width: '100%'}]}>
+                     <TouchableOpacity 
+                        style={[styles.modalActionButton, styles.modalCancelButton]} 
+                        onPress={() => setBookingStep('fillDetails')} // Detaylara geri dön
+                    >
+                        <Text style={[styles.modalActionButtonText, styles.modalCancelButtonText]}>Tekrar Dene</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.modalActionButton, styles.modalConfirmButton, {backgroundColor: '#888'}]} 
+                        onPress={() => {
+                          setIsBookingModalVisible(false);
+                          setBookingStep('selectDateTime'); // Adımı sıfırla
+                        }}
+                    >
+                        <Text style={styles.modalActionButtonText}>Kapat</Text>
+                    </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
     </ScrollView>
   );
@@ -595,6 +984,214 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   // handleOpenMaps fonksiyonu burada veya component içinde tanımlı olmalı
+
+  // Modal Stilleri
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)', // Arka planı karart
+    justifyContent: 'flex-end', // Modalı alta yasla
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 15,
+    paddingTop: 15,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 20, // Bottom safe area için
+    minHeight: screenHeight * 0.6, // Ekranın en az %60'ını kaplasın
+    maxHeight: screenHeight * 0.9, // Ekranın en fazla %90'ını kaplasın
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalCloseButton: {
+    padding: 5, // Dokunma alanını genişlet
+  },
+  calendarInModal: {
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+  },
+  slotsSectionContainer: {
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  slotsSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 10,
+  },
+  slotErrorText: {
+    color: 'red',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  noSlotsText: {
+    textAlign: 'center',
+    color: '#777',
+    marginTop: 15,
+    fontSize: 15,
+  },
+  slotsScrollView: {
+    paddingVertical: 10,
+  },
+  slotChip: {
+    backgroundColor: '#E9F5FF',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#BCE0FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedSlotChip: {
+    backgroundColor: '#007AFF',
+    borderColor: '#0056b3',
+  },
+  disabledSlotChip: {
+    backgroundColor: '#E0E0E0',
+    borderColor: '#C0C0C0',
+  },
+  slotChipText: {
+    color: '#007AFF',
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  selectedSlotChipText: {
+    color: '#FFFFFF',
+  },
+  disabledSlotChipText: {
+    color: '#888888',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+  },
+  modalActionButton: {
+    flex: 1, // Butonların eşit genişlikte olması için
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmButton: {
+    backgroundColor: '#007AFF',
+    marginLeft: 10, // İki buton arası boşluk
+  },
+  modalCancelButton: {
+    backgroundColor: '#F0F0F0', // Daha soft bir iptal butonu
+    borderWidth: 1,
+    borderColor: '#D0D0D0',
+  },
+  modalActionButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  modalCancelButtonText: {
+    color: '#555555',
+  },
+  disabledButton: {
+    backgroundColor: '#A0A0A0',
+  },
+  // Yeni stiller
+  confirmationSection: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAEAEA',
+    marginBottom: 15,
+  },
+  confirmationTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  summaryIcon: {
+    marginRight: 10,
+  },
+  summaryTextLabel: {
+    fontSize: 15,
+    color: '#555',
+    marginRight: 5,
+  },
+  summaryTextValue: {
+    fontSize: 15,
+    color: '#222',
+    fontWeight: '500',
+  },
+  notesSection: {
+    marginBottom: 20,
+  },
+  notesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 8,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: '#D0D0D0',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top', // Android için
+    backgroundColor: '#F9F9F9',
+  },
+  loadingContainerModal: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  loadingTextModal: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#007AFF',
+  },
+  centeredStatusContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  statusTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#28A745',
+    marginTop: 15,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  statusMessage: {
+    fontSize: 16,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 22,
+  }
 });
 
 // handleOpenMaps (Eğer component içinde değilse, buraya taşıyın veya import edin)
